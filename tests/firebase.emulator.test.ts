@@ -22,7 +22,7 @@ import { getAuth as getAdminAuth } from "firebase-admin/auth"
 import { getFirestore as getAdminFirestore } from "firebase-admin/firestore"
 import { createAuthStore } from "@/lib/auth/store"
 import { createEventSubStore } from "@/lib/eventsub/store"
-import { createPitchStore } from "@/lib/pitches/store"
+import { createPitchStore, findClaimablePitchIds } from "@/lib/pitches/store"
 import {
   completeTwitchLogin,
   createOAuthState,
@@ -284,6 +284,62 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
         rejectionReason: "no_public_place",
         processing: { status: "complete", attempts: 1 },
       })
+    })
+
+    it("recovers due pending, retryable, and expired processing records", async () => {
+      const db = getAdminFirestore(admin)
+      const prefix = "emulator-recovery"
+      const records = [
+        {
+          redemptionId: `${prefix}-pending`,
+          processing: { status: "pending", attempts: 0, nextAttemptAt: 1000 },
+        },
+        {
+          redemptionId: `${prefix}-error`,
+          processing: {
+            status: "error",
+            attempts: 1,
+            automaticRetryAt: 1000,
+          },
+        },
+        {
+          redemptionId: `${prefix}-expired`,
+          processing: {
+            status: "processing",
+            attempts: 1,
+            leaseId: "lost",
+            claimedUntil: 1000,
+          },
+        },
+        {
+          redemptionId: `${prefix}-manual-only`,
+          processing: {
+            status: "error",
+            attempts: 5,
+            automaticRetryAt: null,
+          },
+        },
+      ]
+      await Promise.all(
+        records.map((record, index) =>
+          db.doc(`pitches/recovery-${index}`).set({
+            ...record,
+            rawText: "Synthetic pitch",
+            reviewStatus: "processing",
+            createdAt: 1000 + index,
+            updatedAt: 1000,
+          })
+        )
+      )
+      const found = await findClaimablePitchIds(db, 2000, 5)
+      expect(found).toEqual(
+        expect.arrayContaining([
+          `${prefix}-pending`,
+          `${prefix}-error`,
+          `${prefix}-expired`,
+        ])
+      )
+      expect(found).not.toContain(`${prefix}-manual-only`)
     })
 
     it.each(["anonymous", "demo-owner", "twitch:42", "other-user"])(

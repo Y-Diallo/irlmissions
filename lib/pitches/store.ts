@@ -203,3 +203,41 @@ export function createDuplicateSuggester(db: Firestore) {
     },
   }
 }
+
+export async function findClaimablePitchIds(
+  db: Firestore,
+  now: number,
+  limit = 5
+) {
+  const snapshots = await Promise.all(
+    ["pending", "error", "processing"].map((status) =>
+      db
+        .collection("pitches")
+        .where("processing.status", "==", status)
+        .limit(20)
+        .get()
+    )
+  )
+  return snapshots
+    .flatMap((snapshot) => snapshot.docs.map((document) => document.data()))
+    .filter((pitch) => {
+      const processing = pitch.processing
+      if (pitch.reviewStatus !== "processing" || !processing) return false
+      if (processing.status === "pending")
+        return processing.nextAttemptAt <= now
+      if (processing.status === "error") {
+        return (
+          processing.automaticRetryAt !== null &&
+          processing.automaticRetryAt <= now
+        )
+      }
+      return (
+        processing.status === "processing" && processing.claimedUntil <= now
+      )
+    })
+    .sort((left, right) => left.createdAt - right.createdAt)
+    .slice(0, Math.max(0, Math.min(limit, 5)))
+    .flatMap((pitch) =>
+      typeof pitch.redemptionId === "string" ? [pitch.redemptionId] : []
+    )
+}
