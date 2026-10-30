@@ -23,6 +23,7 @@ import { getFirestore as getAdminFirestore } from "firebase-admin/firestore"
 import { createAuthStore } from "@/lib/auth/store"
 import { createEventSubStore } from "@/lib/eventsub/store"
 import { createPitchStore, findClaimablePitchIds } from "@/lib/pitches/store"
+import { createPitchReviewStore } from "@/lib/pitches/review-store"
 import {
   completeTwitchLogin,
   createOAuthState,
@@ -340,6 +341,82 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
         ])
       )
       expect(found).not.toContain(`${prefix}-manual-only`)
+    })
+
+    it("persists owner approval and makes every edit unapprove", async () => {
+      const db = getAdminFirestore(admin)
+      const redemptionId = "emulator-review-redemption"
+      const pitchId = (await import("@/shared/eventsub")).eventSubStorageId(
+        redemptionId
+      )
+      await db.doc(`pitches/${pitchId}`).set({
+        redemptionId,
+        rawText: "Visit a public cafe",
+        reviewStatus: "pending_review",
+        publicLabel: "Mystery cafe challenge",
+        durationMinutes: 10,
+        extraction: {
+          placeQuery: "cafe",
+          challenge: "Visit a public cafe",
+          publicLabelSuggestion: "Mystery cafe challenge",
+          durationMinutes: 10,
+          riskFlags: [],
+        },
+        destination: {
+          placeId: "cafe-1",
+          name: "Sample Coffee",
+          address: "123 Test Street",
+          latitude: 37.78,
+          longitude: -122.41,
+          publicAccess: true,
+          businessStatus: "operational",
+          hoursText: null,
+          googleMapsUri: "https://maps.google.com/?cid=cafe-1",
+          attributions: [],
+        },
+        walkingRoute: { distanceMeters: 500, durationSeconds: 400 },
+        processing: { status: "complete", attempts: 1 },
+        createdAt: 1000,
+        updatedAt: 1000,
+      })
+      const store = createPitchReviewStore(db)
+
+      await store.update(redemptionId, { action: "approve" }, 2000)
+      let saved = (await db.doc(`pitches/${pitchId}`).get()).data()
+      expect(saved).toMatchObject({
+        reviewStatus: "approved",
+        approvedAt: 2000,
+      })
+
+      await store.update(
+        redemptionId,
+        {
+          action: "edit_details",
+          publicLabel: "Edited mystery objective",
+          durationMinutes: 12,
+        },
+        3000
+      )
+      saved = (await db.doc(`pitches/${pitchId}`).get()).data()
+      expect(saved).toMatchObject({
+        reviewStatus: "pending_review",
+        publicLabel: "Edited mystery objective",
+      })
+      expect(saved?.approvedAt).toBeUndefined()
+
+      await store.update(
+        redemptionId,
+        { action: "edit_raw", rawText: "Visit a public park" },
+        4000
+      )
+      saved = (await db.doc(`pitches/${pitchId}`).get()).data()
+      expect(saved).toMatchObject({
+        reviewStatus: "processing",
+        processing: { status: "pending", attempts: 0, nextAttemptAt: 4000 },
+      })
+      expect(saved?.approvedAt).toBeUndefined()
+      expect(saved?.destination).toBeUndefined()
+      expect(saved?.extraction).toBeUndefined()
     })
 
     it.each(["anonymous", "demo-owner", "twitch:42", "other-user"])(

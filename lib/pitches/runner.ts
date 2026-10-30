@@ -99,3 +99,7 @@ export async function runClaimablePitches(
     skipped: results.filter((result) => result.kind === "not_claimed").length,
   }
 }
+
+export async function runPitchNow(redemptionId: string) {
+  return processPitch(redemptionId, await dependencies())
+}
