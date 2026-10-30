@@ -1,0 +1,372 @@
+import { randomBytes } from "node:crypto"
+
+const CLAIM_MS = 2 * 60 * 1000
+const DEFAULT_LOCATION_MAX_AGE_MS = 2 * 60 * 1000
+const MAX_AUTOMATIC_ATTEMPTS = 5
+
+export type Coordinates = { latitude: number; longitude: number }
+
+export type ProcessingPitch = {
+  redemptionId: string
+  rawText: string
+  attempt: number
+  leaseId: string
+}
+
+export type ProcessingContext = {
+  origin: Coordinates & { observedAt: number }
+  searchRadiusMeters: number
+  baseZone: Coordinates & { radiusMeters: number }
+  llmEnabled: boolean
+  defaultDurationMinutes: number
+  locationMaxAgeMs?: number
+}
+
+export type RiskFlag = {
+  category: "dangerous" | "illegal" | "harassing" | "other"
+  reason: string
+}
+
+export type PitchExtraction = {
+  placeQuery: string
+  challenge: string
+  publicLabelSuggestion: string
+  durationMinutes: number
+  riskFlags: RiskFlag[]
+}
+
+export type PlaceCandidate = Coordinates & {
+  placeId: string
+  name: string
+  address: string
+  publicAccess: boolean
+  businessStatus:
+    "operational" | "closed_temporarily" | "closed_permanently" | "unknown"
+  hoursText: string[] | null
+}
+
+export type WalkingRoute = { distanceMeters: number; durationSeconds: number }
+
+export type DuplicateSuggestion = {
+  redemptionId: string
+  summary: string
+}
+
+export type ReviewPitch = {
+  extraction: PitchExtraction
+  destination: PlaceCandidate
+  walkingRoute: WalkingRoute
+  duplicateSuggestions: DuplicateSuggestion[]
+  straightLineMeters: number
+}
+
+export type PitchStore = {
+  claim(
+    redemptionId: string,
+    leaseId: string,
+    now: number,
+    claimedUntil: number
+  ): Promise<ProcessingPitch | null>
+  complete(
+    pitch: ProcessingPitch,
+    review: ReviewPitch,
+    now: number
+  ): Promise<boolean>
+  reject(
+    pitch: ProcessingPitch,
+    reason: "automod" | "no_public_place",
+    now: number
+  ): Promise<boolean>
+  fail(
+    pitch: ProcessingPitch,
+    failure: {
+      code: string
+      automaticRetryAt: number | null
+      failedAt: number
+    }
+  ): Promise<boolean>
+}
+
+export type PitchProcessorDependencies = {
+  store: PitchStore
+  context: { read(): Promise<ProcessingContext> }
+  automod: {
+    check(input: { messageId: string; text: string }): Promise<boolean>
+  }
+  extractor: { extract(text: string): Promise<PitchExtraction> }
+  places: {
+    search(input: {
+      query: string
+      origin: Coordinates
+      radiusMeters: number
+    }): Promise<PlaceCandidate[]>
+  }
+  routes: {
+    walk(origin: Coordinates, destination: Coordinates): Promise<WalkingRoute>
+  }
+  duplicates: {
+    suggest(input: {
+      redemptionId: string
+      extraction: PitchExtraction
+      destination: PlaceCandidate
+    }): Promise<DuplicateSuggestion[]>
+  }
+  now: () => number
+  leaseId?: () => string
+}
+
+export type ProcessPitchResult =
+  | { kind: "not_claimed" }
+  | { kind: "rejected"; reason: "automod" | "no_public_place" }
+  | { kind: "ready_for_review"; flagged: boolean }
+  | { kind: "retry"; code: string; automaticRetryAt: number | null }
+
+class ProcessingError extends Error {
+  constructor(public readonly code: string) {
+    super(code)
+  }
+}
+
+function finite(value: number, code: string) {
+  if (!Number.isFinite(value)) throw new ProcessingError(code)
+  return value
+}
+
+function validCoordinates(value: Coordinates, code: string) {
+  finite(value.latitude, code)
+  finite(value.longitude, code)
+  if (
+    value.latitude < -90 ||
+    value.latitude > 90 ||
+    value.longitude < -180 ||
+    value.longitude > 180
+  ) {
+    throw new ProcessingError(code)
+  }
+  return value
+}
+
+function radians(value: number) {
+  return (value * Math.PI) / 180
+}
+
+export function distanceMeters(a: Coordinates, b: Coordinates) {
+  validCoordinates(a, "invalid_coordinates")
+  validCoordinates(b, "invalid_coordinates")
+  const earthRadius = 6_371_000
+  const latitude = radians(b.latitude - a.latitude)
+  const longitude = radians(b.longitude - a.longitude)
+  const left = radians(a.latitude)
+  const right = radians(b.latitude)
+  const haversine =
+    Math.sin(latitude / 2) ** 2 +
+    Math.cos(left) * Math.cos(right) * Math.sin(longitude / 2) ** 2
+  return 2 * earthRadius * Math.asin(Math.sqrt(haversine))
+}
+
+function validateContext(context: ProcessingContext, now: number) {
+  validCoordinates(context.origin, "invalid_origin")
+  validCoordinates(context.baseZone, "invalid_base_zone")
+  const maxAge = context.locationMaxAgeMs ?? DEFAULT_LOCATION_MAX_AGE_MS
+  if (
+    !Number.isFinite(context.origin.observedAt) ||
+    context.origin.observedAt > now + 30_000 ||
+    now - context.origin.observedAt > maxAge
+  ) {
+    throw new ProcessingError("stale_location")
+  }
+  if (
+    !Number.isFinite(context.searchRadiusMeters) ||
+    context.searchRadiusMeters <= 0 ||
+    context.searchRadiusMeters > 50_000 ||
+    !Number.isFinite(context.baseZone.radiusMeters) ||
+    context.baseZone.radiusMeters < 0 ||
+    !Number.isInteger(context.defaultDurationMinutes) ||
+    context.defaultDurationMinutes < 1 ||
+    context.defaultDurationMinutes > 120
+  ) {
+    throw new ProcessingError("invalid_settings")
+  }
+}
+
+function cleanText(value: unknown, max: number, code: string) {
+  if (typeof value !== "string") throw new ProcessingError(code)
+  const text = value.trim()
+  if (!text || text.length > max) throw new ProcessingError(code)
+  return text
+}
+
+export function validateExtraction(value: PitchExtraction): PitchExtraction {
+  const durationMinutes = value.durationMinutes
+  if (
+    !Number.isInteger(durationMinutes) ||
+    durationMinutes < 1 ||
+    durationMinutes > 120 ||
+    !Array.isArray(value.riskFlags) ||
+    value.riskFlags.length > 8
+  ) {
+    throw new ProcessingError("invalid_extraction")
+  }
+  const categories = new Set(["dangerous", "illegal", "harassing", "other"])
+  const riskFlags = value.riskFlags.map((flag) => {
+    if (!flag || !categories.has(flag.category)) {
+      throw new ProcessingError("invalid_extraction")
+    }
+    return {
+      category: flag.category,
+      reason: cleanText(flag.reason, 300, "invalid_extraction"),
+    }
+  })
+  return {
+    placeQuery: cleanText(value.placeQuery, 300, "invalid_extraction"),
+    challenge: cleanText(value.challenge, 500, "invalid_extraction"),
+    publicLabelSuggestion: cleanText(
+      value.publicLabelSuggestion,
+      80,
+      "invalid_extraction"
+    ),
+    durationMinutes,
+    riskFlags,
+  }
+}
+
+function fallbackExtraction(
+  rawText: string,
+  defaultDurationMinutes: number
+): PitchExtraction {
+  const text = cleanText(rawText, 5000, "invalid_pitch")
+  return {
+    placeQuery: text,
+    challenge: text,
+    publicLabelSuggestion: "Chat-picked mystery objective",
+    durationMinutes: defaultDurationMinutes,
+    riskFlags: [],
+  }
+}
+
+function eligiblePlaces(
+  candidates: PlaceCandidate[],
+  context: ProcessingContext
+) {
+  return candidates
+    .map((candidate) => {
+      validCoordinates(candidate, "invalid_places_response")
+      const fromOrigin = distanceMeters(context.origin, candidate)
+      const fromBase = distanceMeters(context.baseZone, candidate)
+      return { candidate, fromOrigin, fromBase }
+    })
+    .filter(
+      ({ candidate, fromOrigin, fromBase }) =>
+        candidate.publicAccess &&
+        candidate.businessStatus !== "closed_permanently" &&
+        fromOrigin <= context.searchRadiusMeters &&
+        fromBase > context.baseZone.radiusMeters
+    )
+    .sort((a, b) => a.fromOrigin - b.fromOrigin)
+}
+
+function validateRoute(route: WalkingRoute) {
+  if (
+    !Number.isFinite(route.distanceMeters) ||
+    route.distanceMeters < 0 ||
+    !Number.isFinite(route.durationSeconds) ||
+    route.durationSeconds < 0
+  ) {
+    throw new ProcessingError("invalid_route_response")
+  }
+  return route
+}
+
+function retryAt(attempt: number, now: number) {
+  if (attempt >= MAX_AUTOMATIC_ATTEMPTS) return null
+  return now + Math.min(15_000 * 2 ** Math.max(0, attempt - 1), 5 * 60_000)
+}
+
+function safeFailureCode(error: unknown) {
+  return error instanceof ProcessingError ? error.code : "provider_unavailable"
+}
+
+export async function processPitch(
+  redemptionId: string,
+  deps: PitchProcessorDependencies
+): Promise<ProcessPitchResult> {
+  const now = deps.now()
+  const leaseId = deps.leaseId?.() ?? randomBytes(24).toString("base64url")
+  const pitch = await deps.store.claim(
+    redemptionId,
+    leaseId,
+    now,
+    now + CLAIM_MS
+  )
+  if (!pitch) return { kind: "not_claimed" }
+
+  try {
+    const context = await deps.context.read()
+    validateContext(context, now)
+    const permitted = await deps.automod.check({
+      messageId: pitch.redemptionId,
+      text: pitch.rawText,
+    })
+    if (!permitted) {
+      if (!(await deps.store.reject(pitch, "automod", now))) {
+        throw new ProcessingError("claim_lost")
+      }
+      return { kind: "rejected", reason: "automod" }
+    }
+
+    const extraction = context.llmEnabled
+      ? validateExtraction(await deps.extractor.extract(pitch.rawText))
+      : fallbackExtraction(pitch.rawText, context.defaultDurationMinutes)
+    const candidates = await deps.places.search({
+      query: extraction.placeQuery,
+      origin: context.origin,
+      radiusMeters: context.searchRadiusMeters,
+    })
+    const [selected] = eligiblePlaces(candidates, context)
+    if (!selected) {
+      if (!(await deps.store.reject(pitch, "no_public_place", now))) {
+        throw new ProcessingError("claim_lost")
+      }
+      return { kind: "rejected", reason: "no_public_place" }
+    }
+
+    const walkingRoute = validateRoute(
+      await deps.routes.walk(context.origin, selected.candidate)
+    )
+    const duplicateSuggestions = await deps.duplicates.suggest({
+      redemptionId: pitch.redemptionId,
+      extraction,
+      destination: selected.candidate,
+    })
+    if (
+      !Array.isArray(duplicateSuggestions) ||
+      duplicateSuggestions.length > 10
+    ) {
+      throw new ProcessingError("invalid_duplicate_response")
+    }
+    if (
+      !(await deps.store.complete(
+        pitch,
+        {
+          extraction,
+          destination: selected.candidate,
+          walkingRoute,
+          duplicateSuggestions,
+          straightLineMeters: Math.round(selected.fromOrigin),
+        },
+        now
+      ))
+    ) {
+      throw new ProcessingError("claim_lost")
+    }
+    return {
+      kind: "ready_for_review",
+      flagged: extraction.riskFlags.length > 0,
+    }
+  } catch (error) {
+    const code = safeFailureCode(error)
+    const automaticRetryAt = retryAt(pitch.attempt, now)
+    await deps.store.fail(pitch, { code, automaticRetryAt, failedAt: now })
+    return { kind: "retry", code, automaticRetryAt }
+  }
+}

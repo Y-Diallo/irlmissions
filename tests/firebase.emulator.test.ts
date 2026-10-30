@@ -22,6 +22,7 @@ import { getAuth as getAdminAuth } from "firebase-admin/auth"
 import { getFirestore as getAdminFirestore } from "firebase-admin/firestore"
 import { createAuthStore } from "@/lib/auth/store"
 import { createEventSubStore } from "@/lib/eventsub/store"
+import { createPitchStore } from "@/lib/pitches/store"
 import {
   completeTwitchLogin,
   createOAuthState,
@@ -220,6 +221,67 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
           receipt: { ...receipt, messageId: "emulator-eventsub-message-b" },
         })
       ).resolves.toBe("duplicate-redemption")
+    })
+
+    it("claims a pitch once and commits only for the active processing lease", async () => {
+      const db = getAdminFirestore(admin)
+      const redemptionId = "emulator-processor-redemption"
+      const pitchId = (await import("@/shared/eventsub")).eventSubStorageId(
+        redemptionId
+      )
+      await db.doc(`pitches/${pitchId}`).set({
+        redemptionId,
+        rawText: "Visit the public park",
+        reviewStatus: "processing",
+        processing: { status: "pending", attempts: 0, nextAttemptAt: 1000 },
+        createdAt: 1000,
+        updatedAt: 1000,
+      })
+      const store = createPitchStore(db)
+      const claims = await Promise.all([
+        store.claim(redemptionId, "lease-one", 2000, 122000),
+        store.claim(redemptionId, "lease-two", 2000, 122000),
+      ])
+      const winners = claims.filter((claim) => claim !== null)
+      expect(winners).toHaveLength(1)
+      const winner = winners[0]!
+      await expect(
+        store.complete(
+          { ...winner, leaseId: "stale-lease" },
+          {
+            extraction: {
+              placeQuery: "public park",
+              challenge: "Visit the public park",
+              publicLabelSuggestion: "Mystery park challenge",
+              durationMinutes: 10,
+              riskFlags: [],
+            },
+            destination: {
+              placeId: "park-1",
+              name: "Public Park",
+              address: "Park Street",
+              latitude: 37.78,
+              longitude: -122.41,
+              publicAccess: true,
+              businessStatus: "operational",
+              hoursText: null,
+            },
+            walkingRoute: { distanceMeters: 500, durationSeconds: 400 },
+            duplicateSuggestions: [],
+            straightLineMeters: 450,
+          },
+          3000
+        )
+      ).resolves.toBe(false)
+      await expect(store.reject(winner, "no_public_place", 3000)).resolves.toBe(
+        true
+      )
+      const saved = (await db.doc(`pitches/${pitchId}`).get()).data()
+      expect(saved).toMatchObject({
+        reviewStatus: "rejected",
+        rejectionReason: "no_public_place",
+        processing: { status: "complete", attempts: 1 },
+      })
     })
 
     it.each(["anonymous", "demo-owner", "twitch:42", "other-user"])(
