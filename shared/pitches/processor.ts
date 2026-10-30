@@ -43,6 +43,8 @@ export type PlaceCandidate = Coordinates & {
   businessStatus:
     "operational" | "closed_temporarily" | "closed_permanently" | "unknown"
   hoursText: string[] | null
+  googleMapsUri: string
+  attributions: { provider: string; providerUri: string }[]
 }
 
 export type WalkingRoute = { distanceMeters: number; durationSeconds: number }

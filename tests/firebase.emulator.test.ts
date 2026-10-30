@@ -265,6 +265,8 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
               publicAccess: true,
               businessStatus: "operational",
               hoursText: null,
+              googleMapsUri: "https://maps.google.com/?cid=park-1",
+              attributions: [],
             },
             walkingRoute: { distanceMeters: 500, durationSeconds: 400 },
             duplicateSuggestions: [],

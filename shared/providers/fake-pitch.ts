@@ -12,6 +12,8 @@ const fallbackPlace: PlaceCandidate = {
   publicAccess: true,
   businessStatus: "operational",
   hoursText: ["Open 24 hours"],
+  googleMapsUri: "https://maps.google.com/?cid=fake-place",
+  attributions: [],
 }
 
 export function createFakePitchProviders(

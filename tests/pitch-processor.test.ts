@@ -144,6 +144,8 @@ describe("pitch processor", () => {
         publicAccess: true,
         businessStatus: "operational" as const,
         hoursText: null,
+        googleMapsUri: "https://maps.google.com/?cid=inside-base",
+        attributions: [],
       },
       {
         placeId: "eligible",
@@ -154,6 +156,8 @@ describe("pitch processor", () => {
         publicAccess: true,
         businessStatus: "operational" as const,
         hoursText: null,
+        googleMapsUri: "https://maps.google.com/?cid=eligible",
+        attributions: [],
       },
     ])
     await processPitch("redemption-1", state.deps)
