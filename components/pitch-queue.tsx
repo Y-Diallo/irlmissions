@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { PitchReviewItem, ReviewCommand } from "@/shared/pitches/review"
+import type { PollRecord } from "@/shared/polls"
 
 const errors: Record<string, string> = {
   pitch_locked: "This pitch is locked by the current poll or mission.",
@@ -27,6 +28,14 @@ const errors: Record<string, string> = {
   pitch_not_retryable: "This pitch does not currently need a retry.",
   public_label_reveals_destination:
     "The public label reveals the destination. Use a mystery objective instead.",
+  invalid_public_label: "Public poll labels must be 1–25 characters.",
+  invalid_poll_label: "Each Twitch poll choice must be 25 characters or less.",
+  duplicate_poll_labels: "Poll choices must have different public labels.",
+  poll_in_progress: "A poll is already being created or is live.",
+  poll_creation_unknown:
+    "Twitch may have created the poll. Reconcile it before trying again.",
+  twitch_poll_rejected:
+    "Twitch rejected the poll. Check for another live poll.",
   unauthorized: "Your owner session ended. Sign in again.",
 }
 
@@ -55,10 +64,14 @@ function PitchCard({
   pitch,
   mutate,
   processNow,
+  selected,
+  toggleSelected,
 }: {
   pitch: PitchReviewItem
   mutate: (pitch: PitchReviewItem, command: ReviewCommand) => Promise<void>
   processNow: (pitch: PitchReviewItem) => Promise<void>
+  selected: boolean
+  toggleSelected: (pitch: PitchReviewItem) => void
 }) {
   const [rawText, setRawText] = useState(pitch.rawText)
   const [publicLabel, setPublicLabel] = useState(pitch.publicLabel)
@@ -212,7 +225,7 @@ function PitchCard({
                 <Textarea
                   id={`label-${pitch.redemptionId}`}
                   value={publicLabel}
-                  maxLength={80}
+                  maxLength={25}
                   disabled={busy || pitch.locked}
                   className="min-h-20 text-base"
                   onChange={(event) => setPublicLabel(event.target.value)}
@@ -279,6 +292,16 @@ function PitchCard({
         )}
         {reviewed && (
           <>
+            {pitch.reviewStatus === "approved" && (
+              <Button
+                className="min-h-12 w-full text-base sm:w-auto"
+                variant={selected ? "secondary" : "outline"}
+                disabled={busy || pitch.locked}
+                onClick={() => toggleSelected(pitch)}
+              >
+                {selected ? "Remove from poll" : "Add to poll"}
+              </Button>
+            )}
             <Button
               className="min-h-12 w-full text-base sm:w-auto"
               variant="outline"
@@ -320,8 +343,12 @@ function PitchCard({
 
 export function PitchQueue() {
   const [pitches, setPitches] = useState<PitchReviewItem[]>([])
+  const [poll, setPoll] = useState<PollRecord | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [signedIn, setSignedIn] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [pollBusy, setPollBusy] = useState(false)
+  const [pollMessage, setPollMessage] = useState("")
   const [message, setMessage] = useState("Sign in to review pitches.")
 
   const token = useCallback(async () => {
@@ -333,14 +360,39 @@ export function PitchQueue() {
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch("/api/pitches", {
-        headers: { Authorization: `Bearer ${await token()}` },
-        cache: "no-store",
+      const authorization = `Bearer ${await token()}`
+      const [pitchResponse, pollResponse] = await Promise.all([
+        fetch("/api/pitches", {
+          headers: { Authorization: authorization },
+          cache: "no-store",
+        }),
+        fetch("/api/polls", {
+          headers: { Authorization: authorization },
+          cache: "no-store",
+        }),
+      ])
+      const [pitchBody, pollBody] = await Promise.all([
+        pitchResponse.json(),
+        pollResponse.json(),
+      ])
+      if (!pitchResponse.ok) {
+        throw new Error(pitchBody.error ?? "unavailable")
+      }
+      if (!pollResponse.ok) throw new Error(pollBody.error ?? "unavailable")
+      const nextPitches = pitchBody.pitches as PitchReviewItem[]
+      setPitches(nextPitches)
+      setPoll(pollBody.poll)
+      setSelected((current) => {
+        const selectable = new Set(
+          nextPitches
+            .filter(
+              (pitch) => pitch.reviewStatus === "approved" && !pitch.locked
+            )
+            .map((pitch) => pitch.redemptionId)
+        )
+        return new Set([...current].filter((id) => selectable.has(id)))
       })
-      const body = await response.json()
-      if (!response.ok) throw new Error(body.error ?? "unavailable")
-      setPitches(body.pitches)
-      setMessage(body.pitches.length ? "" : "No pitches yet.")
+      setMessage(nextPitches.length ? "" : "No pitches yet.")
     } catch (error) {
       const code = error instanceof Error ? error.message : "unavailable"
       setMessage(errors[code] ?? "Could not load the queue.")
@@ -367,6 +419,8 @@ export function PitchQueue() {
         if (user) void refresh()
         else {
           setPitches([])
+          setPoll(null)
+          setSelected(new Set())
           setMessage("Sign in to review pitches.")
         }
       })
@@ -417,6 +471,50 @@ export function PitchQueue() {
     await refresh()
   }
 
+  function toggleSelected(pitch: PitchReviewItem) {
+    setSelected((current) => {
+      const next = new Set(current)
+      if (next.has(pitch.redemptionId)) next.delete(pitch.redemptionId)
+      else if (next.size < 5) next.add(pitch.redemptionId)
+      return next
+    })
+  }
+
+  async function pollAction(path: string, body?: unknown) {
+    setPollBusy(true)
+    setPollMessage("")
+    try {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${await token()}`,
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? "unavailable")
+      setPoll(result.poll)
+      if (result.reconciled === false) {
+        setPollMessage(
+          "Twitch still has no matching poll. Try reconcile again."
+        )
+      } else {
+        setSelected(new Set())
+      }
+      await refresh()
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "unavailable"
+      setPollMessage(errors[code] ?? "Could not update the poll. Try again.")
+      await refresh()
+    } finally {
+      setPollBusy(false)
+    }
+  }
+
+  const pollInProgress =
+    poll && ["creating", "create_unknown", "active"].includes(poll.status)
+
   return (
     <section aria-labelledby="queue-heading" className="space-y-4">
       <div className="flex items-center justify-between gap-4">
@@ -440,6 +538,78 @@ export function PitchQueue() {
           Refresh
         </Button>
       </div>
+      {signedIn && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">
+              {poll?.status === "active" ? "Voting live" : "Next poll"}
+            </CardTitle>
+            <CardDescription>
+              {poll?.status === "active"
+                ? "Twitch chat is choosing the next objective."
+                : "Choose 2–5 approved pitches. Poll labels never include the destination."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="gap-3">
+            {pollInProgress ? (
+              <ol className="list-decimal space-y-1 pl-5 text-sm">
+                {poll.choices.map((choice) => (
+                  <li key={choice.redemptionId}>{choice.title}</li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {selected.size
+                  ? `${selected.size} selected`
+                  : "No pitches selected yet."}
+              </p>
+            )}
+            {poll?.status === "create_unknown" && (
+              <Alert variant="destructive">
+                <AlertTitle>Poll creation needs reconciliation</AlertTitle>
+                <AlertDescription>
+                  The request had an uncertain result. The app will only look
+                  for the matching Twitch poll; it will not create another one.
+                </AlertDescription>
+              </Alert>
+            )}
+            {pollMessage && (
+              <p role="alert" className="text-sm text-destructive">
+                {pollMessage}
+              </p>
+            )}
+          </CardContent>
+          <CardFooter>
+            {poll?.status === "creating" ||
+            poll?.status === "create_unknown" ? (
+              <Button
+                className="min-h-12 w-full text-base sm:w-auto"
+                disabled={pollBusy}
+                onClick={() => void pollAction("/api/polls/reconcile")}
+              >
+                Reconcile with Twitch
+              </Button>
+            ) : poll?.status === "active" ? (
+              <p className="text-sm text-muted-foreground">
+                Waiting for Twitch poll completion.
+              </p>
+            ) : (
+              <Button
+                className="min-h-12 w-full text-base sm:w-auto"
+                disabled={pollBusy || selected.size < 2 || selected.size > 5}
+                onClick={() =>
+                  void pollAction("/api/polls", {
+                    redemptionIds: [...selected],
+                    durationSeconds: 60,
+                  })
+                }
+              >
+                Start 60-second Twitch poll
+              </Button>
+            )}
+          </CardFooter>
+        </Card>
+      )}
       {message && (
         <p role="status" className="text-sm text-muted-foreground">
           {message}
@@ -452,6 +622,8 @@ export function PitchQueue() {
             pitch={pitch}
             mutate={mutate}
             processNow={processNow}
+            selected={selected.has(pitch.redemptionId)}
+            toggleSelected={toggleSelected}
           />
         ))}
       </div>

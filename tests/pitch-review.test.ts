@@ -95,7 +95,7 @@ describe("pitch review transitions", () => {
   it("rejects a public label that reveals the destination", () => {
     expect(() =>
       transitionPitchReview(
-        record({ publicLabel: "Demo Cafe sandwich challenge" }),
+        record({ publicLabel: "Demo Cafe challenge" }),
         { action: "approve" },
         now
       )

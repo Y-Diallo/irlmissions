@@ -5,6 +5,7 @@ import type {
   RiskFlag,
   WalkingRoute,
 } from "@/shared/pitches/processor"
+import { MAX_POLL_CHOICE_LENGTH } from "@/shared/polls"
 
 export type ReviewStatus =
   "processing" | "pending_review" | "approved" | "rejected"
@@ -111,7 +112,11 @@ export function parseReviewCommand(value: unknown): ReviewCommand {
       }
       return {
         action: "edit_details",
-        publicLabel: cleanText(input.publicLabel, "public_label", 80),
+        publicLabel: cleanText(
+          input.publicLabel,
+          "public_label",
+          MAX_POLL_CHOICE_LENGTH
+        ),
         durationMinutes: durationMinutes as number,
       }
     }
@@ -235,7 +240,7 @@ export function transitionPitchReview(
     const publicLabel = cleanText(
       record.publicLabel ?? record.extraction?.publicLabelSuggestion,
       "public_label",
-      80
+      MAX_POLL_CHOICE_LENGTH
     )
     if (revealsDestination(publicLabel, record.destination!)) {
       throw new PitchReviewError("public_label_reveals_destination", 400)

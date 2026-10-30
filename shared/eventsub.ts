@@ -5,6 +5,8 @@ import { readServerConfig } from "@/shared/config"
 export const REDEMPTION_ADD =
   "channel.channel_points_custom_reward_redemption.add"
 export const REDEMPTION_VERSION = "1"
+export const POLL_END = "channel.poll.end"
+export const POLL_END_VERSION = "1"
 export const EVENTSUB_MAX_AGE_MS = 10 * 60 * 1000
 const EVENTSUB_MAX_FUTURE_MS = 60 * 1000
 const EVENTSUB_MAX_BODY_BYTES = 1024 * 1024
@@ -49,12 +51,27 @@ export type PendingPitch = {
   updatedAt: number
 }
 
+export type PendingPollEnd = {
+  pollId: string
+  sourceMessageId: string
+  broadcasterId: string
+  title: string
+  status: "completed" | "terminated" | "archived" | "moderated" | "invalid"
+  choices: Array<{ id: string; title: string; votes: number }>
+  startedAt: string
+  endedAt: string
+  processing: { status: "pending"; attempts: 0; nextAttemptAt: number }
+  createdAt: number
+  updatedAt: number
+}
+
 export type EventSubWrite =
   | { kind: "redemption"; receipt: EventSubReceipt; pitch: PendingPitch }
+  | { kind: "poll_end"; receipt: EventSubReceipt; poll: PendingPollEnd }
   | { kind: "revocation"; receipt: EventSubReceipt }
 
 export type EventSubSaveResult =
-  "created" | "duplicate-message" | "duplicate-redemption"
+  "created" | "duplicate-message" | "duplicate-redemption" | "duplicate-poll"
 
 export type EventSubStore = {
   save(write: EventSubWrite): Promise<EventSubSaveResult>
@@ -166,10 +183,12 @@ function expectedSubscription(
   headers: EventSubHeaders,
   body: Record<string, unknown>
 ) {
-  if (
-    headers.subscriptionType !== REDEMPTION_ADD ||
-    headers.subscriptionVersion !== REDEMPTION_VERSION
-  ) {
+  const supported =
+    (headers.subscriptionType === REDEMPTION_ADD &&
+      headers.subscriptionVersion === REDEMPTION_VERSION) ||
+    (headers.subscriptionType === POLL_END &&
+      headers.subscriptionVersion === POLL_END_VERSION)
+  if (!supported) {
     throw new EventSubError("unexpected_subscription", 400)
   }
   const subscription = record(body.subscription, "subscription")
@@ -180,7 +199,7 @@ function expectedSubscription(
     type !== headers.subscriptionType ||
     version !== headers.subscriptionVersion ||
     condition.broadcaster_user_id !== config.broadcasterId ||
-    condition.reward_id !== config.rewardId
+    (type === REDEMPTION_ADD && condition.reward_id !== config.rewardId)
   ) {
     throw new EventSubError("unexpected_subscription", 400)
   }
@@ -189,6 +208,65 @@ function expectedSubscription(
     type,
     version,
     status: text(subscription.status, "subscription_status"),
+  }
+}
+
+function pollEnd(
+  config: EventSubConfig,
+  body: Record<string, unknown>,
+  messageId: string,
+  now: number
+): PendingPollEnd {
+  const event = record(body.event, "event")
+  if (event.broadcaster_user_id !== config.broadcasterId) {
+    throw new EventSubError("unexpected_poll", 400)
+  }
+  const status = text(event.status, "poll_status").toLocaleLowerCase()
+  if (
+    !["completed", "terminated", "archived", "moderated", "invalid"].includes(
+      status
+    )
+  ) {
+    throw new EventSubError("invalid_poll_status", 400)
+  }
+  if (
+    !Array.isArray(event.choices) ||
+    event.choices.length < 2 ||
+    event.choices.length > 5
+  ) {
+    throw new EventSubError("invalid_poll_choices", 400)
+  }
+  const choices = event.choices.map((value) => {
+    const choice = record(value, "poll_choice")
+    if (!Number.isSafeInteger(choice.votes) || (choice.votes as number) < 0) {
+      throw new EventSubError("invalid_poll_votes", 400)
+    }
+    return {
+      id: text(choice.id, "poll_choice_id"),
+      title: text(choice.title, "poll_choice_title", { max: 25 }),
+      votes: choice.votes as number,
+    }
+  })
+  const startedAt = text(event.started_at, "poll_started_at")
+  const endedAt = text(event.ended_at, "poll_ended_at")
+  if (
+    !Number.isFinite(Date.parse(startedAt)) ||
+    !Number.isFinite(Date.parse(endedAt))
+  ) {
+    throw new EventSubError("invalid_poll_timestamp", 400)
+  }
+  return {
+    pollId: text(event.id, "poll_id"),
+    sourceMessageId: messageId,
+    broadcasterId: config.broadcasterId,
+    title: text(event.title, "poll_title", { max: 60 }),
+    status: status as PendingPollEnd["status"],
+    choices,
+    startedAt,
+    endedAt,
+    processing: { status: "pending", attempts: 0, nextAttemptAt: now },
+    createdAt: now,
+    updatedAt: now,
   }
 }
 
@@ -275,14 +353,21 @@ export async function acceptEventSub(
     subscriptionStatus: subscription.status,
     receivedAt: now,
   }
-  const write: EventSubWrite =
-    messageType === "notification"
-      ? {
-          kind: "redemption",
-          receipt,
-          pitch: redemptionPitch(config, body, messageId, now),
-        }
-      : { kind: "revocation", receipt }
+  let write: EventSubWrite
+  if (messageType === "revocation") write = { kind: "revocation", receipt }
+  else if (subscription.type === POLL_END) {
+    write = {
+      kind: "poll_end",
+      receipt,
+      poll: pollEnd(config, body, messageId, now),
+    }
+  } else {
+    write = {
+      kind: "redemption",
+      receipt,
+      pitch: redemptionPitch(config, body, messageId, now),
+    }
+  }
   return { kind: "accepted", result: await deps.store.save(write) }
 }
 

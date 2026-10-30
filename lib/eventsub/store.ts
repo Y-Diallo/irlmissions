@@ -17,6 +17,21 @@ export function createEventSubStore(db: Firestore): EventSubStore {
           return "created"
         }
 
+        if (write.kind === "poll_end") {
+          const pollRef = db.doc(
+            `pollEvents/${eventSubStorageId(write.poll.pollId)}`
+          )
+          const pollExists = (await tx.get(pollRef)).exists
+          tx.create(receiptRef, {
+            ...write.receipt,
+            pollId: write.poll.pollId,
+            duplicatePoll: pollExists,
+          })
+          if (pollExists) return "duplicate-poll"
+          tx.create(pollRef, write.poll)
+          return "created"
+        }
+
         const pitchRef = db.doc(
           `pitches/${eventSubStorageId(write.pitch.redemptionId)}`
         )

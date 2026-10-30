@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   acceptEventSub,
   EVENTSUB_MAX_AGE_MS,
+  POLL_END,
   REDEMPTION_ADD,
   type EventSubConfig,
   type EventSubHeaders,
@@ -67,6 +68,7 @@ function envelope(
     timestamp?: string
     messageType?: string
     secret?: string
+    subscriptionType?: string
   } = {}
 ) {
   const messageId = options.id ?? "message-1"
@@ -82,7 +84,7 @@ function envelope(
     messageTimestamp: timestamp,
     messageSignature: signature,
     messageType: options.messageType ?? "notification",
-    subscriptionType: REDEMPTION_ADD,
+    subscriptionType: options.subscriptionType ?? REDEMPTION_ADD,
     subscriptionVersion: "1",
   }
   return { headers, rawBody }
@@ -91,6 +93,7 @@ function envelope(
 function memoryStore() {
   const messages = new Set<string>()
   const redemptions = new Set<string>()
+  const polls = new Set<string>()
   const writes: EventSubWrite[] = []
   const store: EventSubStore = {
     async save(write) {
@@ -101,6 +104,10 @@ function memoryStore() {
         if (redemptions.has(write.pitch.redemptionId))
           return "duplicate-redemption"
         redemptions.add(write.pitch.redemptionId)
+      }
+      if (write.kind === "poll_end") {
+        if (polls.has(write.poll.pollId)) return "duplicate-poll"
+        polls.add(write.poll.pollId)
       }
       return "created"
     },
@@ -127,6 +134,48 @@ describe("EventSub intake", () => {
         rawText: "Go eat a fish sandwich",
         reviewStatus: "processing",
         processing: { status: "pending", attempts: 0, nextAttemptAt: now },
+      },
+    })
+  })
+
+  it("verifies and maps a poll end into pending work", async () => {
+    const fixture = memoryStore()
+    const payload = {
+      subscription: {
+        id: "poll-subscription-1",
+        status: "enabled",
+        type: POLL_END,
+        version: "1",
+        condition: { broadcaster_user_id: "42" },
+      },
+      event: {
+        id: "poll-1",
+        broadcaster_user_id: "42",
+        broadcaster_user_login: "owner",
+        broadcaster_user_name: "Owner",
+        title: "What should we do next?",
+        choices: [
+          { id: "choice-1", title: "Mystery challenge", votes: 2 },
+          { id: "choice-2", title: "Find something blue", votes: 5 },
+        ],
+        status: "completed",
+        started_at: "2026-10-30T17:58:00Z",
+        ended_at: "2026-10-30T17:59:00Z",
+      },
+    }
+    const raw = JSON.stringify(payload)
+    await expect(
+      acceptEventSub(config, envelope(raw, { subscriptionType: POLL_END }), {
+        store: fixture.store,
+        now: () => now,
+      })
+    ).resolves.toEqual({ kind: "accepted", result: "created" })
+    expect(fixture.writes[0]).toMatchObject({
+      kind: "poll_end",
+      poll: {
+        pollId: "poll-1",
+        status: "completed",
+        processing: { status: "pending", nextAttemptAt: now },
       },
     })
   })

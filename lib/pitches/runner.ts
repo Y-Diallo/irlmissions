@@ -24,8 +24,16 @@ import {
   createPitchStore,
   findClaimablePitchIds,
 } from "@/lib/pitches/store"
+import { processPendingPollEnds } from "@/lib/polls/end-store"
 
 export type ProcessorRunSummary = {
+  pollEvents: {
+    scanned: number
+    winners: number
+    noWinner: number
+    ignored: number
+    errors: number
+  }
   scanned: number
   readyForReview: number
   rejected: number
@@ -75,9 +83,11 @@ export async function runClaimablePitches(
 ): Promise<ProcessorRunSummary> {
   const now = Date.now()
   const { db } = getServerFirebase()
+  const pollEvents = await processPendingPollEnds(db, limit, now)
   const ids = await findClaimablePitchIds(db, now, limit)
   if (!ids.length) {
     return {
+      pollEvents,
       scanned: 0,
       readyForReview: 0,
       rejected: 0,
@@ -90,6 +100,7 @@ export async function runClaimablePitches(
   // Sequential by design: normal Twitch accounts allow only five AutoMod checks/minute.
   for (const id of ids) results.push(await processPitch(id, deps))
   return {
+    pollEvents,
     scanned: ids.length,
     readyForReview: results.filter(
       (result) => result.kind === "ready_for_review"

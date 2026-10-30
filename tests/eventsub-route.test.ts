@@ -18,7 +18,7 @@ vi.mock("@/lib/eventsub/store", () => ({
 }))
 
 import { POST } from "@/app/api/eventsub/route"
-import { REDEMPTION_ADD } from "@/shared/eventsub"
+import { POLL_END, REDEMPTION_ADD } from "@/shared/eventsub"
 
 const secret = "eventsub-test-secret"
 const clock = Date.parse("2026-10-30T18:00:00.000Z")
@@ -65,7 +65,7 @@ function payload(challenge?: string) {
 
 function request(
   value: object,
-  options: { type?: string; secret?: string } = {}
+  options: { type?: string; secret?: string; subscriptionType?: string } = {}
 ) {
   const raw = JSON.stringify(value)
   const id = "message-1"
@@ -82,7 +82,8 @@ function request(
       "twitch-eventsub-message-timestamp": timestamp,
       "twitch-eventsub-message-signature": signature,
       "twitch-eventsub-message-type": options.type ?? "notification",
-      "twitch-eventsub-subscription-type": REDEMPTION_ADD,
+      "twitch-eventsub-subscription-type":
+        options.subscriptionType ?? REDEMPTION_ADD,
       "twitch-eventsub-subscription-version": "1",
     },
   })
@@ -124,6 +125,39 @@ describe("EventSub route", () => {
     expect(mocks.save).toHaveBeenCalledOnce()
     expect(mocks.save).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "redemption" })
+    )
+  })
+
+  it("durably saves poll completion through the same thin webhook", async () => {
+    setLiveEnv()
+    vi.setSystemTime(clock)
+    const value = {
+      subscription: {
+        id: "poll-subscription-1",
+        status: "enabled",
+        type: POLL_END,
+        version: "1",
+        condition: { broadcaster_user_id: "42" },
+      },
+      event: {
+        id: "poll-1",
+        broadcaster_user_id: "42",
+        broadcaster_user_login: "owner",
+        broadcaster_user_name: "Owner",
+        title: "What should we do next?",
+        choices: [
+          { id: "choice-1", title: "Mystery challenge", votes: 2 },
+          { id: "choice-2", title: "Find something blue", votes: 5 },
+        ],
+        status: "completed",
+        started_at: "2026-10-30T17:58:00Z",
+        ended_at: "2026-10-30T17:59:00Z",
+      },
+    }
+    const response = await POST(request(value, { subscriptionType: POLL_END }))
+    expect(response.status).toBe(204)
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "poll_end" })
     )
   })
 
