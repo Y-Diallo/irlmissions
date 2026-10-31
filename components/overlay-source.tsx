@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import type { OverlayProjection } from "@/shared/overlay"
+import type { RealtimeIrlLocation } from "@/lib/realtimeirl/client"
 
 function fragmentKey() {
   const fragment = window.location.hash.slice(1)
@@ -87,6 +88,7 @@ function Card({ overlay, now }: { overlay: OverlayProjection; now: number }) {
 export function OverlaySource() {
   const [overlay, setOverlay] = useState<OverlayProjection | null>(null)
   const [error, setError] = useState("")
+  const [locationError, setLocationError] = useState("")
   const [now, setNow] = useState(Date.now())
 
   const refresh = useCallback(async () => {
@@ -120,6 +122,61 @@ export function OverlaySource() {
   }, [])
 
   useEffect(() => {
+    const key = fragmentKey()
+    if (!key) return
+    let stopped = false
+    let unsubscribe: (() => void) | undefined
+
+    const sendLocation = async (location: RealtimeIrlLocation) => {
+      try {
+        const response = await fetch("/api/realtimeirl/location", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(location),
+        })
+        if (!response.ok) throw new Error("Location update failed")
+        if (!stopped) setLocationError("")
+      } catch {
+        if (!stopped) setLocationError("Location disconnected")
+      }
+    }
+
+    const start = async () => {
+      try {
+        const response = await fetch("/api/realtimeirl/config", {
+          headers: { Authorization: `Bearer ${key}` },
+          cache: "no-store",
+        })
+        const body = await response.json()
+        if (!response.ok || typeof body.pullKey !== "string") {
+          throw new Error("RealtimeIRL is not configured")
+        }
+        const { subscribeRealtimeIrl } =
+          await import("@/lib/realtimeirl/client")
+        const stop = await subscribeRealtimeIrl(body.pullKey, (location) => {
+          void sendLocation(location)
+        })
+        if (stopped) stop()
+        else {
+          unsubscribe = stop
+          setLocationError("")
+        }
+      } catch {
+        if (!stopped) setLocationError("Location disconnected")
+      }
+    }
+
+    void start()
+    return () => {
+      stopped = true
+      unsubscribe?.()
+    }
+  }, [])
+
+  useEffect(() => {
     document.documentElement.classList.add("overlay-source-page")
     void refresh()
     const dataInterval = setInterval(() => void refresh(), 2000)
@@ -143,6 +200,9 @@ export function OverlaySource() {
       ) : null}
       {overlay && error && (
         <span className="show-connection-warning">Reconnecting…</span>
+      )}
+      {overlay && !error && locationError && (
+        <span className="show-connection-warning">{locationError}</span>
       )}
     </main>
   )

@@ -8,6 +8,9 @@ export default defineConfig({
       "server-only": fileURLToPath(
         new URL("./tests/server-only.ts", import.meta.url)
       ),
+      "client-only": fileURLToPath(
+        new URL("./tests/server-only.ts", import.meta.url)
+      ),
     },
   },
   test: {
