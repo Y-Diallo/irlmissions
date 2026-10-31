@@ -141,6 +141,49 @@ describe("pitch review transitions", () => {
     ).toThrow("pitch_not_retryable")
   })
 
+  it("queues owner rejection for refund and allows failed Twitch retries", () => {
+    const rejected = transitionPitchReview(record(), { action: "reject" }, now)
+    expect(rejected.values).toMatchObject({
+      reviewStatus: "rejected",
+      redemptionResolution: {
+        action: "refund",
+        status: "pending",
+        attempts: 0,
+        nextAttemptAt: now,
+      },
+    })
+    expect(
+      transitionPitchReview(
+        record({
+          reviewStatus: "rejected",
+          redemptionResolution: {
+            action: "refund",
+            status: "error",
+            attempts: 5,
+            errorCode: "provider",
+            automaticRetryAt: null,
+          },
+        }),
+        { action: "retry_resolution" },
+        now
+      ).values
+    ).toMatchObject({
+      redemptionResolution: {
+        action: "refund",
+        status: "pending",
+        attempts: 0,
+        nextAttemptAt: now,
+      },
+    })
+    expect(() =>
+      transitionPitchReview(
+        record({ reviewStatus: "rejected" }),
+        { action: "edit_raw", rawText: "Try to reuse refunded pitch" },
+        now
+      )
+    ).toThrow("pitch_not_editable")
+  })
+
   it("validates commands and returns only the owner queue projection", () => {
     expect(
       parseReviewCommand({

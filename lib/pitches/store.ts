@@ -85,6 +85,12 @@ export function createPitchStore(db: Firestore): PitchStore {
         tx.update(ref, {
           reviewStatus: "rejected",
           rejectionReason: reason,
+          redemptionResolution: {
+            action: "refund",
+            status: "pending",
+            attempts: 0,
+            nextAttemptAt: now,
+          },
           processing: {
             status: "complete",
             attempts: pitch.attempt,

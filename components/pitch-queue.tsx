@@ -28,6 +28,7 @@ const errors: Record<string, string> = {
   pitch_not_approvable: "Only reviewed pitches can be approved.",
   pitch_not_rejectable: "Only reviewed pitches can be rejected.",
   pitch_not_retryable: "This pitch does not currently need a retry.",
+  redemption_not_retryable: "This Twitch redemption does not need a retry.",
   public_label_reveals_destination:
     "The public label reveals the destination. Use a mystery objective instead.",
   invalid_public_label: "Public poll labels must be 1–25 characters.",
@@ -46,6 +47,8 @@ const errors: Record<string, string> = {
 }
 
 function StatusBadge({ pitch }: { pitch: PitchReviewItem }) {
+  if (pitch.redemptionResolution?.status === "error")
+    return <Badge variant="destructive">Twitch retry needed</Badge>
   if (pitch.reviewStatus === "active_mission")
     return <Badge>Active mission</Badge>
   if (pitch.reviewStatus === "completed") return <Badge>Completed</Badge>
@@ -116,7 +119,7 @@ function PitchCard({
   })
   const reviewed =
     pitch.reviewStatus === "pending_review" || pitch.reviewStatus === "approved"
-  const rawEditable = reviewed || pitch.reviewStatus === "rejected"
+  const rawEditable = reviewed
   const processing = pitch.reviewStatus === "processing"
 
   return (
@@ -156,6 +159,17 @@ function PitchCard({
             <AlertDescription>
               {pitch.processing.errorCode ?? "Provider unavailable"}. Attempts:{" "}
               {pitch.processing.attempts}.
+            </AlertDescription>
+          </Alert>
+        )}
+        {pitch.redemptionResolution?.status === "error" && (
+          <Alert variant="destructive">
+            <AlertTitle>Twitch update failed</AlertTitle>
+            <AlertDescription>
+              {pitch.redemptionResolution.action === "refund"
+                ? "The viewer has not been confirmed as refunded."
+                : "The redemption has not been confirmed as fulfilled."}{" "}
+              {pitch.redemptionResolution.errorCode ?? "Provider unavailable"}
             </AlertDescription>
           </Alert>
         )}
@@ -274,7 +288,12 @@ function PitchCard({
 
         {pitch.reviewStatus === "rejected" && (
           <p className="text-sm text-muted-foreground">
-            Rejected: {pitch.rejectionReason ?? "owner decision"}
+            Rejected: {pitch.rejectionReason ?? "owner decision"}.{" "}
+            {pitch.redemptionResolution?.status === "complete"
+              ? "Refund confirmed."
+              : pitch.redemptionResolution?.status === "error"
+                ? "Refund needs retry."
+                : "Refund queued."}
           </p>
         )}
         {message && (
@@ -285,6 +304,18 @@ function PitchCard({
       </CardContent>
 
       <CardFooter className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+        {pitch.redemptionResolution?.status === "error" && (
+          <Button
+            className="min-h-12 w-full text-base sm:w-auto"
+            variant="destructive"
+            disabled={busy || pitch.locked}
+            onClick={() =>
+              void act(() => mutate(pitch, { action: "retry_resolution" }))
+            }
+          >
+            Retry Twitch update
+          </Button>
+        )}
         {processing && (
           <Button
             className="min-h-12 w-full text-base sm:w-auto"
@@ -343,7 +374,7 @@ function PitchCard({
                 void act(() => mutate(pitch, { action: "reject" }))
               }
             >
-              Reject and refund later
+              Reject and refund
             </Button>
           </>
         )}

@@ -120,7 +120,7 @@ export function parseArrivalSettings(value: unknown): ArrivalSettings {
       "arrival_configuration"
     ),
     locationMaxAgeMs: positiveSetting(
-      input.locationMaxAgeMs,
+      input.arrivalLocationMaxAgeMs,
       DEFAULT_LOCATION_MAX_AGE_MS,
       "arrival_configuration"
     ),

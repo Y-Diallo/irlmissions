@@ -6,6 +6,7 @@ import type {
   WalkingRoute,
 } from "@/shared/pitches/processor"
 import { MAX_POLL_CHOICE_LENGTH } from "@/shared/polls"
+import type { RedemptionResolution } from "@/shared/redemptions"
 
 export type ReviewStatus =
   | "processing"
@@ -39,6 +40,8 @@ export type ReviewRecord = {
   rejectionReason?: string
   approvedAt?: number
   lockedBy?: string
+  redemptionStatus?: "unfulfilled" | "fulfilled" | "canceled"
+  redemptionResolution?: RedemptionResolution
 }
 
 export type PitchReviewItem = {
@@ -63,6 +66,7 @@ export type PitchReviewItem = {
   duplicateSuggestions: DuplicateSuggestion[]
   rejectionReason: string | null
   locked: boolean
+  redemptionResolution: RedemptionResolution | null
 }
 
 export type ReviewCommand =
@@ -70,7 +74,7 @@ export type ReviewCommand =
   | { action: "edit_details"; publicLabel: string; durationMinutes: number }
   | { action: "approve" }
   | { action: "reject" }
-  | { action: "retry" }
+  | { action: "retry" | "retry_resolution" }
 
 export type ReviewUpdate = {
   values: Record<string, unknown>
@@ -129,6 +133,7 @@ export function parseReviewCommand(value: unknown): ReviewCommand {
     case "approve":
     case "reject":
     case "retry":
+    case "retry_resolution":
       return { action: input.action }
     default:
       throw new PitchReviewError("invalid_command", 400)
@@ -166,6 +171,7 @@ export function toPitchReviewItem(record: ReviewRecord): PitchReviewItem {
     duplicateSuggestions: record.duplicateSuggestions ?? [],
     rejectionReason: record.rejectionReason ?? null,
     locked: !!record.lockedBy,
+    redemptionResolution: record.redemptionResolution ?? null,
   }
 }
 
@@ -198,9 +204,7 @@ export function transitionPitchReview(
 ): ReviewUpdate {
   editable(record)
   if (command.action === "edit_raw") {
-    if (
-      !["pending_review", "approved", "rejected"].includes(record.reviewStatus)
-    ) {
+    if (!["pending_review", "approved"].includes(record.reviewStatus)) {
       throw new PitchReviewError("pitch_not_editable")
     }
     return {
@@ -279,9 +283,33 @@ export function transitionPitchReview(
       values: {
         reviewStatus: "rejected",
         rejectionReason: "owner",
+        redemptionResolution: {
+          action: "refund",
+          status: "pending",
+          attempts: 0,
+          nextAttemptAt: now,
+        },
         updatedAt: now,
       },
       deleteFields: ["approvedAt"],
+    }
+  }
+  if (command.action === "retry_resolution") {
+    const current = record.redemptionResolution
+    if (!current || current.status !== "error") {
+      throw new PitchReviewError("redemption_not_retryable")
+    }
+    return {
+      values: {
+        redemptionResolution: {
+          action: current.action,
+          status: "pending",
+          attempts: 0,
+          nextAttemptAt: now,
+        },
+        updatedAt: now,
+      },
+      deleteFields: [],
     }
   }
   if (

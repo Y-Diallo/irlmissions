@@ -25,8 +25,16 @@ import {
   findClaimablePitchIds,
 } from "@/lib/pitches/store"
 import { processPendingPollEnds } from "@/lib/polls/end-store"
+import { processPendingRedemptions } from "@/lib/redemptions/runner"
 
 export type ProcessorRunSummary = {
+  redemptions: {
+    scanned: number
+    completed: number
+    retrying: number
+    errors: number
+    skipped: number
+  }
   pollEvents: {
     scanned: number
     winners: number
@@ -83,10 +91,22 @@ export async function runClaimablePitches(
 ): Promise<ProcessorRunSummary> {
   const now = Date.now()
   const { db } = getServerFirebase()
+  const firebase = readServerConfig(process.env)
   const pollEvents = await processPendingPollEnds(db, limit, now)
+  const resolveRedemptions = () =>
+    firebase.mode === "live"
+      ? processPendingRedemptions(db, limit, now)
+      : Promise.resolve({
+          scanned: 0,
+          completed: 0,
+          retrying: 0,
+          errors: 0,
+          skipped: 0,
+        })
   const ids = await findClaimablePitchIds(db, now, limit)
   if (!ids.length) {
     return {
+      redemptions: await resolveRedemptions(),
       pollEvents,
       scanned: 0,
       readyForReview: 0,
@@ -95,11 +115,18 @@ export async function runClaimablePitches(
       skipped: 0,
     }
   }
-  const deps = await dependencies()
-  const results: ProcessPitchResult[] = []
-  // Sequential by design: normal Twitch accounts allow only five AutoMod checks/minute.
-  for (const id of ids) results.push(await processPitch(id, deps))
+  const [redemptions, results] = await Promise.all([
+    resolveRedemptions(),
+    (async () => {
+      const deps = await dependencies()
+      const processed: ProcessPitchResult[] = []
+      // Sequential by design: normal Twitch accounts allow only five AutoMod checks/minute.
+      for (const id of ids) processed.push(await processPitch(id, deps))
+      return processed
+    })(),
+  ])
   return {
+    redemptions,
     pollEvents,
     scanned: ids.length,
     readyForReview: results.filter(
