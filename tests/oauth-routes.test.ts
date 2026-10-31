@@ -35,6 +35,30 @@ describe("OAuth route transport", () => {
     expect(mockServer.loadAuthDependencies).not.toHaveBeenCalled()
   })
 
+  it("recognizes the public hostname forwarded by App Hosting", async () => {
+    const response = await login(
+      new Request("https://internal-cloud-run.example/api/auth/twitch/login", {
+        headers: {
+          host: "internal-cloud-run.example",
+          "x-forwarded-host": "producer.example",
+        },
+      })
+    )
+    expect(response.status).toBe(303)
+    expect(new URL(response.headers.get("location")!).origin).toBe(
+      "https://id.twitch.tv"
+    )
+  })
+
+  it("still rejects an unrelated public hostname", async () => {
+    const response = await login(
+      new Request("https://other.example/api/auth/twitch/login", {
+        headers: { host: "other.example" },
+      })
+    )
+    expect(response.status).toBe(400)
+  })
+
   it("rejects an invalid state and clears old cookies before any SDK calls", async () => {
     const response = await callback(
       new NextRequest(
