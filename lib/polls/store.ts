@@ -22,6 +22,10 @@ function pollFromSession(data: FirebaseFirestore.DocumentData | undefined) {
   return poll && typeof poll === "object" ? (poll as PollRecord) : null
 }
 
+function hasActiveMission(data: FirebaseFirestore.DocumentData | undefined) {
+  return ["heading", "arrived"].includes(data?.mission?.status)
+}
+
 export function createPollStore(db: Firestore) {
   const sessionRef = db.doc("sessions/current")
   return {
@@ -33,6 +37,9 @@ export function createPollStore(db: Firestore) {
       return db.runTransaction(async (tx) => {
         const session = await tx.get(sessionRef)
         const current = pollFromSession(session.data())
+        if (hasActiveMission(session.data())) {
+          throw new PollError("mission_in_progress")
+        }
         if (current && IN_PROGRESS.has(current.status)) {
           throw new PollError("poll_in_progress")
         }

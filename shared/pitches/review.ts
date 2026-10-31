@@ -8,7 +8,13 @@ import type {
 import { MAX_POLL_CHOICE_LENGTH } from "@/shared/polls"
 
 export type ReviewStatus =
-  "processing" | "pending_review" | "approved" | "rejected"
+  | "processing"
+  | "pending_review"
+  | "approved"
+  | "rejected"
+  | "active_mission"
+  | "completed"
+  | "failed"
 
 export type ReviewRecord = {
   redemptionId: string

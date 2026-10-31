@@ -2,6 +2,11 @@ import "server-only"
 import { FieldValue, type Firestore } from "firebase-admin/firestore"
 import { eventSubStorageId, type PendingPollEnd } from "@/shared/eventsub"
 import {
+  createMissionFromWinner,
+  MissionError,
+  type MissionRecord,
+} from "@/shared/missions"
+import {
   attachTwitchPoll,
   matchesPollAttempt,
   PollError,
@@ -114,7 +119,38 @@ export function createPollEndStore(db: Firestore) {
           return "error" as const
         }
 
-        tx.set(sessionRef, { poll: resolution.poll }, { merge: true })
+        let mission: MissionRecord | null = null
+        if (resolution.winnerRedemptionId) {
+          const winner = pitchSnapshots.find(
+            (snapshot) =>
+              snapshot.data()?.redemptionId === resolution.winnerRedemptionId
+          )
+          try {
+            if (!winner?.exists) throw new MissionError("winner_not_found", 500)
+            mission = createMissionFromWinner(
+              resolution.poll,
+              winner.data()!,
+              now
+            )
+          } catch (error) {
+            if (!(error instanceof MissionError)) throw error
+            tx.update(eventRef, {
+              processing: {
+                status: "error",
+                errorCode: error.code,
+                failedAt: now,
+              },
+              updatedAt: now,
+            })
+            return "error" as const
+          }
+        }
+
+        tx.set(
+          sessionRef,
+          { poll: resolution.poll, ...(mission ? { mission } : {}) },
+          { merge: true }
+        )
         for (const snapshot of pitchSnapshots) {
           const redemptionId = snapshot.data()?.redemptionId
           if (!snapshot.exists || snapshot.data()?.lockedBy !== poll.lockId) {
@@ -122,7 +158,9 @@ export function createPollEndStore(db: Firestore) {
           }
           if (redemptionId === resolution.winnerRedemptionId) {
             tx.update(snapshot.ref, {
-              lockedBy: `mission:pending:${poll.twitchPollId}`,
+              lockedBy: mission!.lockId,
+              reviewStatus: "active_mission",
+              missionId: mission!.missionId,
               pollWonAt: now,
               updatedAt: now,
             })

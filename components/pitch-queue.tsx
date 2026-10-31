@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { MissionCard } from "@/components/mission-card"
 import {
   Card,
   CardAction,
@@ -18,6 +19,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { PitchReviewItem, ReviewCommand } from "@/shared/pitches/review"
 import type { PollRecord } from "@/shared/polls"
+import type { MissionAction, MissionOwnerView } from "@/shared/missions"
 
 const errors: Record<string, string> = {
   pitch_locked: "This pitch is locked by the current poll or mission.",
@@ -36,10 +38,19 @@ const errors: Record<string, string> = {
     "Twitch may have created the poll. Reconcile it before trying again.",
   twitch_poll_rejected:
     "Twitch rejected the poll. Check for another live poll.",
+  mission_in_progress: "Finish the current mission before starting a poll.",
+  mission_not_arrived:
+    "Mark the destination as arrived before choosing an outcome.",
+  mission_finished: "This mission already has an outcome.",
   unauthorized: "Your owner session ended. Sign in again.",
 }
 
 function StatusBadge({ pitch }: { pitch: PitchReviewItem }) {
+  if (pitch.reviewStatus === "active_mission")
+    return <Badge>Active mission</Badge>
+  if (pitch.reviewStatus === "completed") return <Badge>Completed</Badge>
+  if (pitch.reviewStatus === "failed")
+    return <Badge variant="destructive">Failed</Badge>
   if (pitch.reviewStatus === "approved") return <Badge>Approved</Badge>
   if (pitch.reviewStatus === "rejected")
     return <Badge variant="outline">Rejected</Badge>
@@ -154,7 +165,7 @@ function PitchCard({
           <Textarea
             id={`raw-${pitch.redemptionId}`}
             value={rawText}
-            disabled={busy || pitch.locked || processing}
+            disabled={busy || pitch.locked || processing || !rawEditable}
             className="min-h-24 text-base"
             onChange={(event) => setRawText(event.target.value)}
           />
@@ -344,6 +355,7 @@ function PitchCard({
 export function PitchQueue() {
   const [pitches, setPitches] = useState<PitchReviewItem[]>([])
   const [poll, setPoll] = useState<PollRecord | null>(null)
+  const [mission, setMission] = useState<MissionOwnerView | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [signedIn, setSignedIn] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -361,7 +373,7 @@ export function PitchQueue() {
   const refresh = useCallback(async () => {
     try {
       const authorization = `Bearer ${await token()}`
-      const [pitchResponse, pollResponse] = await Promise.all([
+      const [pitchResponse, pollResponse, missionResponse] = await Promise.all([
         fetch("/api/pitches", {
           headers: { Authorization: authorization },
           cache: "no-store",
@@ -370,18 +382,27 @@ export function PitchQueue() {
           headers: { Authorization: authorization },
           cache: "no-store",
         }),
+        fetch("/api/missions", {
+          headers: { Authorization: authorization },
+          cache: "no-store",
+        }),
       ])
-      const [pitchBody, pollBody] = await Promise.all([
+      const [pitchBody, pollBody, missionBody] = await Promise.all([
         pitchResponse.json(),
         pollResponse.json(),
+        missionResponse.json(),
       ])
       if (!pitchResponse.ok) {
         throw new Error(pitchBody.error ?? "unavailable")
       }
       if (!pollResponse.ok) throw new Error(pollBody.error ?? "unavailable")
+      if (!missionResponse.ok) {
+        throw new Error(missionBody.error ?? "unavailable")
+      }
       const nextPitches = pitchBody.pitches as PitchReviewItem[]
       setPitches(nextPitches)
       setPoll(pollBody.poll)
+      setMission(missionBody.mission)
       setSelected((current) => {
         const selectable = new Set(
           nextPitches
@@ -420,6 +441,7 @@ export function PitchQueue() {
         else {
           setPitches([])
           setPoll(null)
+          setMission(null)
           setSelected(new Set())
           setMessage("Sign in to review pitches.")
         }
@@ -512,8 +534,36 @@ export function PitchQueue() {
     }
   }
 
+  async function missionAction(action: MissionAction) {
+    const response = await fetch("/api/missions", {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${await token()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action }),
+    })
+    const result = await response.json()
+    if (!response.ok) {
+      const code = result.error ?? "unavailable"
+      throw new Error(
+        errors[code] ?? "Could not update the mission. Try again."
+      )
+    }
+    setMission(result.mission)
+    await refresh()
+  }
+
   const pollInProgress =
     poll && ["creating", "create_unknown", "active"].includes(poll.status)
+  const missionInProgress =
+    mission && ["heading", "arrived"].includes(mission.status)
+  const selectedPitches = [...selected].flatMap((redemptionId) => {
+    const pitch = pitches.find(
+      (candidate) => candidate.redemptionId === redemptionId
+    )
+    return pitch ? [pitch] : []
+  })
 
   return (
     <section aria-labelledby="queue-heading" className="space-y-4">
@@ -538,6 +588,9 @@ export function PitchQueue() {
           Refresh
         </Button>
       </div>
+      {signedIn && mission && (
+        <MissionCard mission={mission} onAction={missionAction} />
+      )}
       {signedIn && (
         <Card>
           <CardHeader>
@@ -547,7 +600,9 @@ export function PitchQueue() {
             <CardDescription>
               {poll?.status === "active"
                 ? "Twitch chat is choosing the next objective."
-                : "Choose 2–5 approved pitches. Poll labels never include the destination."}
+                : missionInProgress
+                  ? "Finish the current mission before starting another poll."
+                  : "Choose 2–5 approved pitches. Poll labels never include the destination."}
             </CardDescription>
           </CardHeader>
           <CardContent className="gap-3">
@@ -557,11 +612,15 @@ export function PitchQueue() {
                   <li key={choice.redemptionId}>{choice.title}</li>
                 ))}
               </ol>
+            ) : selectedPitches.length ? (
+              <ol className="list-decimal space-y-1 pl-5 text-sm">
+                {selectedPitches.map((pitch) => (
+                  <li key={pitch.redemptionId}>{pitch.publicLabel}</li>
+                ))}
+              </ol>
             ) : (
               <p className="text-sm text-muted-foreground">
-                {selected.size
-                  ? `${selected.size} selected`
-                  : "No pitches selected yet."}
+                No pitches selected yet.
               </p>
             )}
             {poll?.status === "create_unknown" && (
@@ -596,7 +655,12 @@ export function PitchQueue() {
             ) : (
               <Button
                 className="min-h-12 w-full text-base sm:w-auto"
-                disabled={pollBusy || selected.size < 2 || selected.size > 5}
+                disabled={
+                  pollBusy ||
+                  !!missionInProgress ||
+                  selected.size < 2 ||
+                  selected.size > 5
+                }
                 onClick={() =>
                   void pollAction("/api/polls", {
                     redemptionIds: [...selected],
