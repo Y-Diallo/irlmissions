@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { authFailure, NO_STORE } from "@/lib/auth/http"
 import { parseSetupAction, parseSetupUpdate, SetupError } from "@/shared/setup"
+import { publicRequestOrigin } from "@/shared/public-origin"
 import { tenantDoc } from "@/shared/tenant"
 
 export const runtime = "nodejs"
@@ -134,7 +135,7 @@ export async function POST(request: Request) {
     )
     return NextResponse.json(
       {
-        overlayUrl: `${new URL(request.url).origin}/overlay/${credential.overlayId}#${credential.secret}`,
+        overlayUrl: `${publicRequestOrigin(request)}/overlay/${credential.overlayId}#${credential.secret}`,
       },
       { headers: NO_STORE }
     )

@@ -46,6 +46,15 @@ const errors: Record<string, string> = {
   unauthorized: "Your owner session ended. Sign in again.",
 }
 
+const processingErrors: Record<string, string> = {
+  automod_unavailable: "Twitch AutoMod could not check this pitch.",
+  openai_unavailable: "OpenAI could not clean up this pitch.",
+  places_unavailable: "Google Places could not find destinations.",
+  routes_unavailable: "Google Routes could not calculate the walk.",
+  stale_location: "The latest location is too old. Check RealtimeIRL.",
+  provider_unavailable: "An external provider was unavailable.",
+}
+
 function StatusBadge({ pitch }: { pitch: PitchReviewItem }) {
   if (pitch.redemptionResolution?.status === "error")
     return <Badge variant="destructive">Twitch retry needed</Badge>
@@ -157,7 +166,9 @@ function PitchCard({
           <Alert variant="destructive">
             <AlertTitle>Processing stopped</AlertTitle>
             <AlertDescription>
-              {pitch.processing.errorCode ?? "Provider unavailable"}. Attempts:{" "}
+              {processingErrors[pitch.processing.errorCode ?? ""] ??
+                pitch.processing.errorCode ??
+                "Provider unavailable"} Attempts:{" "}
               {pitch.processing.attempts}.
             </AlertDescription>
           </Alert>

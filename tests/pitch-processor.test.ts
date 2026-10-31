@@ -182,7 +182,7 @@ describe("pitch processor", () => {
     const state = fixture("[places-error] cafe")
     await expect(processPitch("redemption-1", state.deps)).resolves.toEqual({
       kind: "retry",
-      code: "provider_unavailable",
+      code: "places_unavailable",
       automaticRetryAt: now + 15_000,
     })
     expect(state.completed).toBeNull()

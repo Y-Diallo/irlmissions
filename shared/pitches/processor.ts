@@ -288,6 +288,17 @@ function safeFailureCode(error: unknown) {
   return error instanceof ProcessingError ? error.code : "provider_unavailable"
 }
 
+async function providerStep<T>(code: string, operation: () => Promise<T>) {
+  try {
+    return await operation()
+  } catch (error) {
+    // Keep provider response bodies and credentials out of Firestore/UI while
+    // preserving enough information to diagnose the integration that failed.
+    console.error(`Pitch processing step failed: ${code}`, error)
+    throw new ProcessingError(code)
+  }
+}
+
 export async function processPitch(
   redemptionId: string,
   deps: PitchProcessorDependencies
@@ -305,10 +316,12 @@ export async function processPitch(
   try {
     const context = await deps.context.read()
     validateContext(context, now)
-    const permitted = await deps.automod.check({
-      messageId: pitch.redemptionId,
-      text: pitch.rawText,
-    })
+    const permitted = await providerStep("automod_unavailable", () =>
+      deps.automod.check({
+        messageId: pitch.redemptionId,
+        text: pitch.rawText,
+      })
+    )
     if (!permitted) {
       if (!(await deps.store.reject(pitch, "automod", now))) {
         throw new ProcessingError("claim_lost")
@@ -317,13 +330,19 @@ export async function processPitch(
     }
 
     const extraction = context.llmEnabled
-      ? validateExtraction(await deps.extractor.extract(pitch.rawText))
+      ? validateExtraction(
+          await providerStep("openai_unavailable", () =>
+            deps.extractor.extract(pitch.rawText)
+          )
+        )
       : fallbackExtraction(pitch.rawText, context.defaultDurationMinutes)
-    const candidates = await deps.places.search({
-      query: extraction.placeQuery,
-      origin: context.origin,
-      radiusMeters: context.searchRadiusMeters,
-    })
+    const candidates = await providerStep("places_unavailable", () =>
+      deps.places.search({
+        query: extraction.placeQuery,
+        origin: context.origin,
+        radiusMeters: context.searchRadiusMeters,
+      })
+    )
     const [selected] = eligiblePlaces(candidates, context)
     if (!selected) {
       if (!(await deps.store.reject(pitch, "no_public_place", now))) {
@@ -333,7 +352,9 @@ export async function processPitch(
     }
 
     const walkingRoute = validateRoute(
-      await deps.routes.walk(context.origin, selected.candidate)
+      await providerStep("routes_unavailable", () =>
+        deps.routes.walk(context.origin, selected.candidate)
+      )
     )
     const duplicateSuggestions = await deps.duplicates.suggest({
       redemptionId: pitch.redemptionId,
