@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   createGooglePlacesProvider,
   createGoogleRoutesProvider,
+  getGooglePlacePhoto,
   readGoogleMapsConfig,
 } from "@/shared/providers/google-maps"
 
@@ -60,6 +61,7 @@ describe("Google Maps providers", () => {
       (init?.headers as Record<string, string>)["X-Goog-FieldMask"]
     )
     expect(fields).toContain("places.currentOpeningHours.weekdayDescriptions")
+    expect(fields).not.toContain("places.photos")
     expect(fields).not.toBe("*")
     const request = JSON.parse(String(init?.body))
     expect(request).toMatchObject({
@@ -72,6 +74,61 @@ describe("Google Maps providers", () => {
           radius: 2500,
         },
       },
+    })
+  })
+
+  it("gets fresh photo metadata at reveal time without exposing the API key", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({
+          photos: [
+            {
+              name: "places/place-1/photos/photo-1",
+              widthPx: 1600,
+              heightPx: 900,
+              authorAttributions: [
+                {
+                  displayName: "Demo Photographer",
+                  uri: "//maps.google.com/profile/demo",
+                  photoUri: "//lh3.googleusercontent.com/avatar",
+                },
+              ],
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          photoUri: "https://lh3.googleusercontent.com/place-photo",
+        })
+      )
+    await expect(
+      getGooglePlacePhoto({ apiKey: "google-secret" }, "place-1", fetchMock)
+    ).resolves.toEqual({
+      photoUri: "https://lh3.googleusercontent.com/place-photo",
+      authorAttributions: [
+        {
+          displayName: "Demo Photographer",
+          uri: "https://maps.google.com/profile/demo",
+          photoUri: "https://lh3.googleusercontent.com/avatar",
+        },
+      ],
+    })
+    const [detailsUrl, detailsInit] = fetchMock.mock.calls[0]
+    expect(String(detailsUrl)).toBe(
+      "https://places.googleapis.com/v1/places/place-1"
+    )
+    expect(detailsInit?.headers).toMatchObject({
+      "X-Goog-FieldMask": "photos",
+    })
+    const [photoUrl, photoInit] = fetchMock.mock.calls[1]
+    expect(String(photoUrl)).toContain(
+      "places/place-1/photos/photo-1/media?maxWidthPx=1200"
+    )
+    expect(String(photoUrl)).not.toContain("google-secret")
+    expect(photoInit?.headers).toEqual({
+      "X-Goog-Api-Key": "google-secret",
     })
   })
 

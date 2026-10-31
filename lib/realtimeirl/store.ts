@@ -9,6 +9,7 @@ import {
   type RealtimeIrlSample,
 } from "@/shared/realtimeirl"
 import type { MissionRecord } from "@/shared/missions"
+import { tenantDoc } from "@/shared/tenant"
 
 function missionFrom(data: FirebaseFirestore.DocumentData | undefined) {
   const mission = data?.mission
@@ -33,12 +34,14 @@ function observedAtFrom(data: FirebaseFirestore.DocumentData | undefined) {
   return typeof data?.observedAt === "number" ? data.observedAt : undefined
 }
 
-export function createRealtimeIrlStore(db: Firestore) {
-  const settingsRef = db.doc("settings/current")
-  const sessionRef = db.doc("sessions/current")
-  const locationRef = db.doc("privateState/location")
-  const confirmationRef = db.doc("privateState/arrivalConfirmation")
-  const publicStateRef = db.doc("publicState/current")
+export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
+  const settingsRef = db.doc(tenantDoc(tenantId, "settings/current"))
+  const sessionRef = db.doc(tenantDoc(tenantId, "sessions/current"))
+  const locationRef = db.doc(tenantDoc(tenantId, "privateState/location"))
+  const confirmationRef = db.doc(
+    tenantDoc(tenantId, "privateState/arrivalConfirmation")
+  )
+  const publicStateRef = db.doc(tenantDoc(tenantId, "publicState/current"))
 
   return {
     record(sample: RealtimeIrlSample, now: number) {

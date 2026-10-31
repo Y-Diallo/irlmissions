@@ -22,7 +22,21 @@ function timer(milliseconds: number) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`
 }
 
-function Card({ overlay, now }: { overlay: OverlayProjection; now: number }) {
+type PhotoAttribution = {
+  displayName: string
+  uri?: string
+  photoUri?: string
+}
+
+function Card({
+  overlay,
+  now,
+  photo,
+}: {
+  overlay: OverlayProjection
+  now: number
+  photo: { uri: string; attributions: PhotoAttribution[] }
+}) {
   if (overlay.state === "idle") {
     return (
       <div className="show-card show-card--idle">
@@ -53,43 +67,117 @@ function Card({ overlay, now }: { overlay: OverlayProjection; now: number }) {
 
   const terminal = overlay.state === "completed" || overlay.state === "failed"
   const heading = overlay.state === "heading"
+  const photoVisible = Boolean(photo.uri && "hasPlacePhoto" in overlay)
   return (
-    <div className={`show-card show-card--${overlay.state}`}>
-      <p className="show-kicker">
-        {heading
-          ? "NEXT MISSION"
-          : overlay.state === "arrived"
-            ? "MISSION ACTIVE"
-            : overlay.state === "completed"
-              ? "MISSION COMPLETE"
-              : "MISSION FAILED"}
-      </p>
-      <h1 className="show-objective">{overlay.objective}</h1>
-      {"placeName" in overlay && overlay.placeName && (
-        <p className="show-place">📍 {overlay.placeName}</p>
+    <div
+      className={`show-card show-card--${overlay.state} ${photoVisible ? "show-card--photo" : ""}`}
+    >
+      {photoVisible && (
+        <div
+          aria-label={
+            "placeName" in overlay && overlay.placeName
+              ? `Photo of ${overlay.placeName}`
+              : "Destination photo"
+          }
+          className="show-photo"
+          role="img"
+          style={{
+            backgroundImage: `url(${JSON.stringify(photo.uri).slice(1, -1)})`,
+          }}
+        />
       )}
-      {heading && <p className="show-status">Heading to the destination…</p>}
-      {overlay.state === "arrived" && (
-        <div className="show-timer" role="timer">
-          {timer(overlay.timerEndsAt - now)}
+      <div className="show-card-content">
+        <div className="show-stage-row">
+          <p className="show-kicker">
+            {heading
+              ? "NEXT MISSION"
+              : overlay.state === "arrived"
+                ? "MISSION ACTIVE"
+                : overlay.state === "completed"
+                  ? "MISSION COMPLETE"
+                  : "MISSION FAILED"}
+          </p>
+          <span className={`show-state-pill show-state-pill--${overlay.state}`}>
+            {heading
+              ? "EN ROUTE"
+              : overlay.state === "arrived"
+                ? "LIVE"
+                : overlay.state.toUpperCase()}
+          </span>
         </div>
-      )}
-      {terminal && (
-        <p className="show-status">
-          {overlay.state === "completed"
-            ? "Challenge cleared!"
-            : "On to the next one"}
-        </p>
-      )}
+        <p className="show-label">CURRENT OBJECTIVE</p>
+        <h1 className="show-objective">{overlay.objective}</h1>
+        {"placeName" in overlay && overlay.placeName && (
+          <p className="show-place">
+            <span>DESTINATION</span>
+            {overlay.placeName}
+          </p>
+        )}
+        {heading && (
+          <p className="show-status">
+            Destination locked. Make your way there.
+          </p>
+        )}
+        {overlay.state === "arrived" && (
+          <div className="show-timer-block">
+            <span>TIME REMAINING</span>
+            <div className="show-timer" role="timer">
+              {timer(overlay.timerEndsAt - now)}
+            </div>
+          </div>
+        )}
+        {terminal && (
+          <p className="show-status show-status--terminal">
+            {overlay.state === "completed"
+              ? "Challenge cleared!"
+              : "Mission logged — on to the next one"}
+          </p>
+        )}
+        {photoVisible && photo.attributions.length > 0 && (
+          <p className="show-photo-credit">
+            Photo:{" "}
+            {photo.attributions.map((attribution, index) => (
+              <span key={`${attribution.displayName}-${index}`}>
+                {index > 0 ? ", " : ""}
+                {attribution.photoUri && (
+                  <i
+                    aria-hidden="true"
+                    className="show-photo-author"
+                    style={{
+                      backgroundImage: `url(${JSON.stringify(attribution.photoUri).slice(1, -1)})`,
+                    }}
+                  />
+                )}
+                {attribution.uri ? (
+                  <a href={attribution.uri} rel="noreferrer">
+                    {attribution.displayName}
+                  </a>
+                ) : (
+                  attribution.displayName
+                )}
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
     </div>
   )
 }
 
-export function OverlaySource() {
+export function OverlaySource({ overlayId }: { overlayId?: string }) {
   const [overlay, setOverlay] = useState<OverlayProjection | null>(null)
   const [error, setError] = useState("")
   const [locationError, setLocationError] = useState("")
-  const [now, setNow] = useState(Date.now())
+  const [photo, setPhoto] = useState<{
+    version: number
+    uri: string
+    attributions: PhotoAttribution[]
+  }>({ version: 0, uri: "", attributions: [] })
+  const [now, setNow] = useState(0)
+  const photoVersion =
+    overlay && "hasPlacePhoto" in overlay && overlay.hasPlacePhoto
+      ? overlay.updatedAt
+      : null
 
   const refresh = useCallback(async () => {
     const key = fragmentKey()
@@ -99,7 +187,10 @@ export function OverlaySource() {
     }
     try {
       const response = await fetch("/api/overlay", {
-        headers: { Authorization: `Bearer ${key}` },
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "X-Overlay-Id": overlayId ?? "",
+        },
         cache: "no-store",
       })
       const body = await response.json()
@@ -119,7 +210,60 @@ export function OverlaySource() {
           : "Overlay data is temporarily unavailable."
       )
     }
-  }, [])
+  }, [overlayId])
+
+  useEffect(() => {
+    if (photoVersion === null) return
+    const key = fragmentKey()
+    if (!key) return
+    let stopped = false
+    const load = async () => {
+      try {
+        const response = await fetch("/api/overlay/photo", {
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "X-Overlay-Id": overlayId ?? "",
+          },
+          cache: "no-store",
+        })
+        const body = await response.json()
+        if (!response.ok || typeof body.photoUri !== "string") return
+        const attributions: PhotoAttribution[] = Array.isArray(
+          body.authorAttributions
+        )
+          ? body.authorAttributions.flatMap((value: unknown) => {
+              if (!value || typeof value !== "object") return []
+              const attribution = value as Record<string, unknown>
+              if (typeof attribution.displayName !== "string") return []
+              return [
+                {
+                  displayName: attribution.displayName,
+                  ...(typeof attribution.uri === "string"
+                    ? { uri: attribution.uri }
+                    : {}),
+                  ...(typeof attribution.photoUri === "string"
+                    ? { photoUri: attribution.photoUri }
+                    : {}),
+                },
+              ]
+            })
+          : []
+        if (!stopped) {
+          setPhoto({
+            version: photoVersion,
+            uri: body.photoUri,
+            attributions,
+          })
+        }
+      } catch {
+        // The objective card remains fully usable without optional photography.
+      }
+    }
+    void load()
+    return () => {
+      stopped = true
+    }
+  }, [photoVersion, overlayId])
 
   useEffect(() => {
     const key = fragmentKey()
@@ -133,6 +277,7 @@ export function OverlaySource() {
           method: "POST",
           headers: {
             Authorization: `Bearer ${key}`,
+            "X-Overlay-Id": overlayId ?? "",
             "Content-Type": "application/json",
           },
           body: JSON.stringify(location),
@@ -147,7 +292,10 @@ export function OverlaySource() {
     const start = async () => {
       try {
         const response = await fetch("/api/realtimeirl/config", {
-          headers: { Authorization: `Bearer ${key}` },
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "X-Overlay-Id": overlayId ?? "",
+          },
           cache: "no-store",
         })
         const body = await response.json()
@@ -174,15 +322,16 @@ export function OverlaySource() {
       stopped = true
       unsubscribe?.()
     }
-  }, [])
+  }, [overlayId])
 
   useEffect(() => {
     document.documentElement.classList.add("overlay-source-page")
-    void refresh()
+    const initialRefresh = setTimeout(() => void refresh(), 0)
     const dataInterval = setInterval(() => void refresh(), 2000)
     const timerInterval = setInterval(() => setNow(Date.now()), 1000)
     return () => {
       document.documentElement.classList.remove("overlay-source-page")
+      clearTimeout(initialRefresh)
       clearInterval(dataInterval)
       clearInterval(timerInterval)
     }
@@ -191,7 +340,15 @@ export function OverlaySource() {
   return (
     <main className="overlay-canvas">
       {overlay ? (
-        <Card overlay={overlay} now={now} />
+        <Card
+          overlay={overlay}
+          now={now}
+          photo={
+            photo.version === photoVersion
+              ? photo
+              : { uri: "", attributions: [] }
+          }
+        />
       ) : error ? (
         <div className="show-card show-card--error">
           <p className="show-kicker">OVERLAY SETUP</p>

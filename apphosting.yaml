@@ -7,18 +7,88 @@ runConfig:
   # cpu: 1
   # memoryMiB: 512
 
-# Environment variables and secrets.
-# env:
-  # Configure environment variables.
-  # See https://firebase.google.com/docs/app-hosting/configure#user-defined-environment
-  # - variable: MESSAGE
-  #   value: Hello world!
-  #   availability:
-  #     - BUILD
-  #     - RUNTIME
+# Environment variables and Secret Manager references.
+# Create every referenced secret before deploying with:
+#   firebase apphosting:secrets:set SECRET_NAME
+env:
+  # Next.js inlines NEXT_PUBLIC_* values during the build. Firebase web API
+  # keys and app IDs are public browser configuration, not server secrets.
+  - variable: NEXT_PUBLIC_APP_MODE
+    value: live
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: irlmissions-53ba4
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyDWtnt5uJ34BxpFb4HqT8Aiq2Dsqo-kBCA
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: irlmissions-53ba4.firebaseapp.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: 1:283089811936:web:d280505833df4dc4051385
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+    value: G-QQT11H7RGT
+    availability:
+      - BUILD
+      - RUNTIME
 
-  # Grant access to secrets in Cloud Secret Manager.
-  # You can create secrets with the CLI command `firebase apphosting:secrets:set <secretName>`.
-  # See https://firebase.google.com/docs/app-hosting/configure#secret-parameters
-  # - variable: MY_SECRET
-  #   secret: mySecretRef
+  # Server-side Firebase uses App Hosting's Application Default Credentials.
+  - variable: FIREBASE_PROJECT_ID
+    value: irlmissions-53ba4
+    availability:
+      - RUNTIME
+
+  # Global Twitch application configuration. Streamer IDs, tokens, rewards,
+  # and RealtimeIRL credentials are tenant-scoped Firestore data.
+  - variable: TWITCH_CLIENT_ID
+    secret: TWITCH_CLIENT_ID
+    availability:
+      - RUNTIME
+  - variable: TWITCH_CLIENT_SECRET
+    secret: TWITCH_CLIENT_SECRET
+    availability:
+      - RUNTIME
+  - variable: TWITCH_REDIRECT_URI
+    value: https://irlmissions--irlmissions-53ba4.us-central1.hosted.app/api/auth/twitch/callback
+    availability:
+      - RUNTIME
+  - variable: TWITCH_EVENTSUB_SECRET
+    secret: TWITCH_EVENTSUB_SECRET
+    availability:
+      - RUNTIME
+
+  # Pitch enrichment providers.
+  - variable: GOOGLE_MAPS_API_KEY
+    secret: GOOGLE_MAPS_API_KEY
+    availability:
+      - RUNTIME
+  - variable: OPENAI_API_KEY
+    secret: OPENAI_API_KEY
+    availability:
+      - RUNTIME
+  - variable: OPENAI_MODEL
+    value: gpt-6-luna
+    availability:
+      - RUNTIME
+
+  # Cloud Scheduler calls the single bounded tenant processor endpoint.
+  - variable: PROCESSOR_SERVICE_ACCOUNT_EMAIL
+    value: firebase-app-hosting-compute@irlmissions-53ba4.iam.gserviceaccount.com
+    availability:
+      - RUNTIME
+  - variable: PROCESSOR_AUDIENCE
+    value: https://irlmissions--irlmissions-53ba4.us-central1.hosted.app/api/internal/process
+    availability:
+      - RUNTIME

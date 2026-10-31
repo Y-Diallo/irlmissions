@@ -27,8 +27,8 @@ async function dependencies(authorization: string | null) {
       import("@/lib/firebase/admin"),
       import("@/lib/refunds/store"),
     ])
-  await requireServerOwner(authorization)
-  return createRefundStore(getServerFirebase().db)
+  const owner = await requireServerOwner(authorization)
+  return createRefundStore(getServerFirebase().db, owner.tenantId)
 }
 
 export async function GET(request: Request) {

@@ -50,6 +50,12 @@ function string(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : null
 }
 
+function httpsUrl(value: unknown) {
+  const candidate = string(value)
+  if (candidate?.startsWith("//")) return `https:${candidate}`
+  return candidate?.startsWith("https://") ? candidate : null
+}
+
 function businessStatus(value: unknown): PlaceCandidate["businessStatus"] {
   switch (value) {
     case "OPERATIONAL":
@@ -72,6 +78,48 @@ function parseAttributions(value: unknown) {
     const providerUri = string(item?.providerUri)
     return provider && providerUri ? [{ provider, providerUri }] : []
   })
+}
+
+function parsePhotoAttributions(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, 5).flatMap((entry) => {
+    const item = object(entry)
+    const displayName = string(item?.displayName)
+    if (!displayName) return []
+    const uri = httpsUrl(item?.uri) ?? undefined
+    const photoUri = httpsUrl(item?.photoUri) ?? undefined
+    return [
+      {
+        displayName,
+        ...(uri ? { uri } : {}),
+        ...(photoUri ? { photoUri } : {}),
+      },
+    ]
+  })
+}
+
+function parsePhoto(value: unknown) {
+  if (!Array.isArray(value)) return undefined
+  const photo = object(value[0])
+  const name = string(photo?.name)
+  const widthPx = photo?.widthPx
+  const heightPx = photo?.heightPx
+  if (
+    !name ||
+    !/^places\/[^/]+\/photos\/[^/]+$/.test(name) ||
+    !Number.isSafeInteger(widthPx) ||
+    !Number.isSafeInteger(heightPx) ||
+    (widthPx as number) <= 0 ||
+    (heightPx as number) <= 0
+  ) {
+    return undefined
+  }
+  return {
+    name,
+    widthPx: widthPx as number,
+    heightPx: heightPx as number,
+    authorAttributions: parsePhotoAttributions(photo?.authorAttributions),
+  }
 }
 
 function parsePlace(value: unknown): PlaceCandidate | null {
@@ -115,6 +163,61 @@ function parsePlace(value: unknown): PlaceCandidate | null {
     hoursText: hoursText?.length ? hoursText : null,
     googleMapsUri,
     attributions: parseAttributions(place?.attributions),
+  }
+}
+
+async function getGooglePlacePhotoUri(
+  config: GoogleMapsConfig,
+  photoName: string,
+  fetchImpl: Fetch = fetch
+) {
+  if (!/^places\/[^/]+\/photos\/[^/]+$/.test(photoName)) {
+    throw new Error("Invalid Google Place photo reference")
+  }
+  const url = new URL(`https://places.googleapis.com/v1/${photoName}/media`)
+  url.searchParams.set("maxWidthPx", "1200")
+  url.searchParams.set("maxHeightPx", "720")
+  url.searchParams.set("skipHttpRedirect", "true")
+  const response = await fetchImpl(url, {
+    headers: { "X-Goog-Api-Key": config.apiKey },
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => null)
+  if (!response?.ok) throw new Error("Google Place photo unavailable")
+  const payload = object(await response.json().catch(() => null))
+  const photoUri = string(payload?.photoUri)
+  if (!photoUri || !photoUri.startsWith("https://")) {
+    throw new Error("Google Place photo unavailable")
+  }
+  return photoUri
+}
+
+export async function getGooglePlacePhoto(
+  config: GoogleMapsConfig,
+  placeId: string,
+  fetchImpl: Fetch = fetch
+) {
+  if (!/^[A-Za-z0-9_-]{5,256}$/.test(placeId)) {
+    throw new Error("Invalid Google Place ID")
+  }
+  const response = await fetchImpl(
+    `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
+    {
+      headers: {
+        "X-Goog-Api-Key": config.apiKey,
+        "X-Goog-FieldMask": "photos",
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    }
+  ).catch(() => null)
+  if (!response?.ok) throw new Error("Google Place photo unavailable")
+  const payload = object(await response.json().catch(() => null))
+  const photo = parsePhoto(payload?.photos)
+  if (!photo) throw new Error("Google Place photo unavailable")
+  return {
+    photoUri: await getGooglePlacePhotoUri(config, photo.name, fetchImpl),
+    authorAttributions: photo.authorAttributions,
   }
 }
 

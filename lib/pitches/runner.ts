@@ -49,13 +49,13 @@ export type ProcessorRunSummary = {
   skipped: number
 }
 
-async function dependencies() {
+async function dependencies(tenantId: string) {
   const firebase = readServerConfig(process.env)
   const { db } = getServerFirebase()
   const common = {
-    store: createPitchStore(db),
-    context: createPitchContextProvider(db),
-    duplicates: createDuplicateSuggester(db),
+    store: createPitchStore(db, tenantId),
+    context: createPitchContextProvider(db, tenantId),
+    duplicates: createDuplicateSuggester(db, tenantId),
     now: Date.now,
   }
   if (firebase.mode === "emulator") {
@@ -69,9 +69,9 @@ async function dependencies() {
     ...common,
     automod: createTwitchAutoModProvider({
       clientId: twitch.clientId,
-      broadcasterId: twitch.ownerId,
+      broadcasterId: tenantId,
       getAccessToken: (forceRefresh = false) =>
-        getTwitchAccessToken(twitch, auth, forceRefresh),
+        getTwitchAccessToken(twitch, auth, tenantId, forceRefresh),
     }),
     extractor: {
       extract(text: string) {
@@ -87,15 +87,16 @@ async function dependencies() {
 }
 
 export async function runClaimablePitches(
+  tenantId: string,
   limit = 5
 ): Promise<ProcessorRunSummary> {
   const now = Date.now()
   const { db } = getServerFirebase()
   const firebase = readServerConfig(process.env)
-  const pollEvents = await processPendingPollEnds(db, limit, now)
+  const pollEvents = await processPendingPollEnds(db, tenantId, limit, now)
   const resolveRedemptions = () =>
     firebase.mode === "live"
-      ? processPendingRedemptions(db, limit, now)
+      ? processPendingRedemptions(db, tenantId, limit, now)
       : Promise.resolve({
           scanned: 0,
           completed: 0,
@@ -103,7 +104,7 @@ export async function runClaimablePitches(
           errors: 0,
           skipped: 0,
         })
-  const ids = await findClaimablePitchIds(db, now, limit)
+  const ids = await findClaimablePitchIds(db, tenantId, now, limit)
   if (!ids.length) {
     return {
       redemptions: await resolveRedemptions(),
@@ -118,7 +119,7 @@ export async function runClaimablePitches(
   const [redemptions, results] = await Promise.all([
     resolveRedemptions(),
     (async () => {
-      const deps = await dependencies()
+      const deps = await dependencies(tenantId)
       const processed: ProcessPitchResult[] = []
       // Sequential by design: normal Twitch accounts allow only five AutoMod checks/minute.
       for (const id of ids) processed.push(await processPitch(id, deps))
@@ -138,6 +139,6 @@ export async function runClaimablePitches(
   }
 }
 
-export async function runPitchNow(redemptionId: string) {
-  return processPitch(redemptionId, await dependencies())
+export async function runPitchNow(tenantId: string, redemptionId: string) {
+  return processPitch(redemptionId, await dependencies(tenantId))
 }

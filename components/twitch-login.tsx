@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 
 const LOGIN_ERRORS: Record<string, string> = {
-  owner: "This app is restricted to the configured streamer's Twitch account.",
+  owner: "That Twitch identity could not be verified.",
   scopes:
     "The requested Twitch permissions are needed to run the stream. Please reconnect.",
   denied: "Twitch sign-in was canceled. You can try again.",

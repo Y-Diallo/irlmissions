@@ -14,8 +14,13 @@ export async function GET(request: Request) {
       import("@/lib/firebase/admin"),
       import("@/lib/pitches/review-store"),
     ])
-    await requireServerOwner(request.headers.get("authorization"))
-    const pitches = await createPitchReviewStore(getServerFirebase().db).list()
+    const owner = await requireServerOwner(
+      request.headers.get("authorization")
+    )
+    const pitches = await createPitchReviewStore(
+      getServerFirebase().db,
+      owner.tenantId
+    ).list()
     return NextResponse.json({ pitches }, { headers: NO_STORE })
   } catch (error) {
     return authFailure(error)

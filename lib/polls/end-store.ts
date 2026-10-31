@@ -16,6 +16,7 @@ import {
   type PollRecord,
   type TwitchPoll,
 } from "@/shared/polls"
+import { tenantDoc } from "@/shared/tenant"
 
 function currentPoll(data: FirebaseFirestore.DocumentData | undefined) {
   const poll = data?.poll
@@ -47,13 +48,13 @@ function twitchPollFromEvent(
   }
 }
 
-export function createPollEndStore(db: Firestore) {
-  const sessionRef = db.doc("sessions/current")
-  const publicStateRef = db.doc("publicState/current")
+export function createPollEndStore(db: Firestore, tenantId: string) {
+  const sessionRef = db.doc(tenantDoc(tenantId, "sessions/current"))
+  const publicStateRef = db.doc(tenantDoc(tenantId, "publicState/current"))
   return {
     async findPending(limit = 5) {
       const snapshot = await db
-        .collection("pollEvents")
+        .collection(tenantDoc(tenantId, "pollEvents"))
         .where("processing.status", "==", "pending")
         .limit(Math.max(0, Math.min(limit, 5)))
         .get()
@@ -65,7 +66,9 @@ export function createPollEndStore(db: Firestore) {
 
     apply(pollId: string, now: number) {
       return db.runTransaction(async (tx) => {
-        const eventRef = db.doc(`pollEvents/${eventSubStorageId(pollId)}`)
+        const eventRef = db.doc(
+          tenantDoc(tenantId, `pollEvents/${eventSubStorageId(pollId)}`)
+        )
         const [eventSnapshot, sessionSnapshot] = await Promise.all([
           tx.get(eventRef),
           tx.get(sessionRef),
@@ -100,7 +103,12 @@ export function createPollEndStore(db: Firestore) {
         for (const choice of poll.choices) {
           pitchSnapshots.push(
             await tx.get(
-              db.doc(`pitches/${eventSubStorageId(choice.redemptionId)}`)
+              db.doc(
+                tenantDoc(
+                  tenantId,
+                  `pitches/${eventSubStorageId(choice.redemptionId)}`
+                )
+              )
             )
           )
         }
@@ -193,10 +201,11 @@ export function createPollEndStore(db: Firestore) {
 
 export async function processPendingPollEnds(
   db: Firestore,
+  tenantId: string,
   limit = 5,
   now = Date.now()
 ) {
-  const store = createPollEndStore(db)
+  const store = createPollEndStore(db, tenantId)
   const ids = await store.findPending(limit)
   const results = []
   for (const id of ids) results.push(await store.apply(id, now))

@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { demoEnv } from "./fixtures"
-
 const mocks = vi.hoisted(() => ({
   getServerFirebase: vi.fn(() => ({ db: { synthetic: true } })),
+  requireOverlayTenant: vi.fn(),
   read: vi.fn(),
 }))
 
@@ -12,20 +11,14 @@ vi.mock("@/lib/firebase/admin", () => ({
 vi.mock("@/lib/overlay/store", () => ({
   createOverlayStore: () => ({ read: mocks.read }),
 }))
+vi.mock("@/lib/overlay/access-server", () => ({
+  requireOverlayTenant: mocks.requireOverlayTenant,
+}))
 
 import { GET } from "@/app/api/overlay/route"
 
 const key = "overlay_test_key_1234567890_abcdef"
 const url = "http://localhost:3000/api/overlay"
-
-function setEnv() {
-  for (const [name, value] of Object.entries({
-    ...demoEnv,
-    OVERLAY_ACCESS_KEY: key,
-  })) {
-    vi.stubEnv(name, value)
-  }
-}
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -34,7 +27,7 @@ afterEach(() => {
 
 describe("overlay read route", () => {
   it("returns only the projection for the scoped OBS key", async () => {
-    setEnv()
+    mocks.requireOverlayTenant.mockResolvedValue("42")
     mocks.read.mockResolvedValue({
       state: "heading",
       updatedAt: 1,
@@ -51,7 +44,12 @@ describe("overlay read route", () => {
   })
 
   it("rejects a missing or wrong key before Firebase initialization", async () => {
-    setEnv()
+    mocks.requireOverlayTenant.mockRejectedValue(
+      new (await import("@/shared/overlay-access")).OverlayAccessError(
+        "unauthorized",
+        401
+      )
+    )
     for (const authorization of [
       null,
       "Bearer wrong_key_1234567890123456789012",
@@ -67,10 +65,4 @@ describe("overlay read route", () => {
     expect(mocks.read).not.toHaveBeenCalled()
   })
 
-  it("fails before Firebase when the overlay key is not configured", async () => {
-    for (const [name, value] of Object.entries(demoEnv)) vi.stubEnv(name, value)
-    const response = await GET(new Request(url))
-    expect(response.status).toBe(503)
-    expect(mocks.getServerFirebase).not.toHaveBeenCalled()
-  })
 })

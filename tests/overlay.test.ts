@@ -104,7 +104,24 @@ describe("public overlay projection", () => {
       objective: "Mystery food challenge",
       timerEndsAt: now + 601_000,
       placeName: "Sample Cafe",
+      hasPlacePhoto: true,
     })
+  })
+
+  it("publishes only photo availability after reveal", () => {
+    const arrived: MissionRecord = {
+      ...mission,
+      status: "arrived",
+      arrivedAt: now,
+      timerEndsAt: now + 600_000,
+      destinationRevealedAt: now,
+    }
+    const projection = missionOverlay(arrived)
+    expect(projection).toMatchObject({
+      placeName: "Sample Cafe",
+      hasPlacePhoto: true,
+    })
+    expect(JSON.stringify(projection)).not.toContain("secret-place-id")
   })
 
   it("rebuilds an allowlist and drops injected private fields", () => {

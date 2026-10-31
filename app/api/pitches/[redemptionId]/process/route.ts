@@ -11,7 +11,9 @@ export async function POST(
 ) {
   try {
     const { requireServerOwner } = await import("@/lib/auth/server")
-    await requireServerOwner(request.headers.get("authorization"))
+    const owner = await requireServerOwner(
+      request.headers.get("authorization")
+    )
     const { redemptionId } = await params
     if (
       !redemptionId ||
@@ -21,7 +23,7 @@ export async function POST(
       throw new PitchReviewError("invalid_redemption_id", 400)
     }
     const { runPitchNow } = await import("@/lib/pitches/runner")
-    return NextResponse.json(await runPitchNow(redemptionId), {
+    return NextResponse.json(await runPitchNow(owner.tenantId, redemptionId), {
       headers: NO_STORE,
     })
   } catch (error) {

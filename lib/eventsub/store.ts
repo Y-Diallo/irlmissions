@@ -2,13 +2,20 @@ import "server-only"
 import type { Firestore } from "firebase-admin/firestore"
 import type { EventSubStore } from "@/shared/eventsub"
 import { eventSubStorageId } from "@/shared/eventsub"
+import { tenantDoc } from "@/shared/tenant"
 
-export function createEventSubStore(db: Firestore): EventSubStore {
+export function createEventSubStore(
+  db: Firestore,
+  tenantId: string
+): EventSubStore {
   return {
     save(write) {
       return db.runTransaction(async (tx) => {
         const receiptRef = db.doc(
-          `eventsubMessages/${eventSubStorageId(write.receipt.messageId)}`
+          tenantDoc(
+            tenantId,
+            `eventsubMessages/${eventSubStorageId(write.receipt.messageId)}`
+          )
         )
         if ((await tx.get(receiptRef)).exists) return "duplicate-message"
 
@@ -19,7 +26,10 @@ export function createEventSubStore(db: Firestore): EventSubStore {
 
         if (write.kind === "poll_end") {
           const pollRef = db.doc(
-            `pollEvents/${eventSubStorageId(write.poll.pollId)}`
+            tenantDoc(
+              tenantId,
+              `pollEvents/${eventSubStorageId(write.poll.pollId)}`
+            )
           )
           const pollExists = (await tx.get(pollRef)).exists
           tx.create(receiptRef, {
@@ -33,7 +43,10 @@ export function createEventSubStore(db: Firestore): EventSubStore {
         }
 
         const pitchRef = db.doc(
-          `pitches/${eventSubStorageId(write.pitch.redemptionId)}`
+          tenantDoc(
+            tenantId,
+            `pitches/${eventSubStorageId(write.pitch.redemptionId)}`
+          )
         )
         const pitchExists = (await tx.get(pitchRef)).exists
         tx.create(receiptRef, {

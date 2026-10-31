@@ -1,21 +1,19 @@
 import { readServerConfig, type Environment } from "../config"
 import { DEMO_OWNER_UID } from "./demo-owner"
 import { AuthError, ownerUid } from "./twitch"
+import { validateTenantId, type TenantContext } from "../tenant"
 
 export type VerifiedIdentity = {
   uid: string
   owner?: unknown
   twitchUserId?: unknown
 }
-export type OwnerPolicy = { mode: "emulator" | "live"; ownerId?: string }
+export type OwnerPolicy = { mode: "emulator" | "live" }
 
 export function readOwnerPolicy(env: Environment): OwnerPolicy {
   const config = readServerConfig(env)
   if (config.mode === "emulator") return { mode: "emulator" }
-  const ownerId = env.TWITCH_OWNER_ID?.trim()
-  if (!ownerId || !/^\d{1,32}$/.test(ownerId))
-    throw new AuthError("configuration", 503)
-  return { mode: "live", ownerId }
+  return { mode: "live" }
 }
 
 export async function authenticateOwner(
@@ -32,17 +30,24 @@ export async function authenticateOwner(
     if (error instanceof AuthError) throw error
     throw new AuthError("unauthorized")
   }
+  let tenantId = "demo-owner"
+  if (policy.mode === "live") {
+    try {
+      tenantId = validateTenantId(identity.twitchUserId, "live")
+    } catch {
+      throw new AuthError("owner", 403)
+    }
+  }
   const valid =
     policy.mode === "emulator"
       ? identity.uid === DEMO_OWNER_UID
-      : !!policy.ownerId &&
-        identity.uid === ownerUid(policy.ownerId) &&
-        identity.twitchUserId === policy.ownerId
+      : identity.uid === ownerUid(tenantId) && identity.twitchUserId === tenantId
   if (!valid || identity.owner !== true) throw new AuthError("owner", 403)
   // Never spread a decoded JWT into a response (it may contain unrelated claims).
   return {
     uid: identity.uid,
     mode: policy.mode,
-    ...(policy.mode === "live" ? { twitchUserId: policy.ownerId } : {}),
-  }
+    tenantId,
+    ...(policy.mode === "live" ? { twitchUserId: tenantId } : {}),
+  } satisfies TenantContext & { twitchUserId?: string }
 }

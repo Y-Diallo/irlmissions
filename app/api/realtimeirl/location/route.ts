@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server"
-import {
-  OverlayAccessError,
-  readOverlayAccessKey,
-  requireOverlayAccess,
-} from "@/shared/overlay-access"
+import { OverlayAccessError } from "@/shared/overlay-access"
 import { parseRealtimeIrlSample, RealtimeIrlError } from "@/shared/realtimeirl"
 
 export const runtime = "nodejs"
@@ -16,8 +12,8 @@ const MAX_BODY_BYTES = 1_024
 
 export async function POST(request: Request) {
   try {
-    const overlayKey = readOverlayAccessKey(process.env)
-    requireOverlayAccess(request.headers.get("authorization"), overlayKey)
+    const { requireOverlayTenant } = await import("@/lib/overlay/access-server")
+    const tenantId = await requireOverlayTenant(request)
     if (!request.headers.get("content-type")?.startsWith("application/json")) {
       return NextResponse.json(
         { error: "invalid_content_type" },
@@ -44,10 +40,10 @@ export async function POST(request: Request) {
         import("@/lib/firebase/admin"),
         import("@/lib/realtimeirl/store"),
       ])
-    const result = await createRealtimeIrlStore(getServerFirebase().db).record(
-      sample,
-      Date.now()
-    )
+    const result = await createRealtimeIrlStore(
+      getServerFirebase().db,
+      tenantId
+    ).record(sample, Date.now())
     return NextResponse.json(
       {
         status: result.status,

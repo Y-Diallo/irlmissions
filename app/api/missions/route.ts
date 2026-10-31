@@ -31,8 +31,13 @@ export async function GET(request: Request) {
       import("@/lib/firebase/admin"),
       import("@/lib/missions/store"),
     ])
-    await requireServerOwner(request.headers.get("authorization"))
-    const mission = await createMissionStore(getServerFirebase().db).read()
+    const owner = await requireServerOwner(
+      request.headers.get("authorization")
+    )
+    const mission = await createMissionStore(
+      getServerFirebase().db,
+      owner.tenantId
+    ).read()
     return NextResponse.json({ mission }, { headers: NO_STORE })
   } catch (error) {
     return failure(error)
@@ -50,12 +55,14 @@ export async function PATCH(request: Request) {
       import("@/lib/firebase/admin"),
       import("@/lib/missions/store"),
     ])
-    await requireServerOwner(request.headers.get("authorization"))
-    const action = parseMissionAction(await request.json())
-    const mission = await createMissionStore(getServerFirebase().db).act(
-      action,
-      Date.now()
+    const owner = await requireServerOwner(
+      request.headers.get("authorization")
     )
+    const action = parseMissionAction(await request.json())
+    const mission = await createMissionStore(
+      getServerFirebase().db,
+      owner.tenantId
+    ).act(action, Date.now())
     return NextResponse.json({ mission }, { headers: NO_STORE })
   } catch (error) {
     return failure(error)

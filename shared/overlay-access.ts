@@ -1,5 +1,4 @@
-import { timingSafeEqual } from "node:crypto"
-import { readServerConfig, type Environment } from "@/shared/config"
+import { createHash, timingSafeEqual } from "node:crypto"
 
 export class OverlayAccessError extends Error {
   constructor(
@@ -10,23 +9,19 @@ export class OverlayAccessError extends Error {
   }
 }
 
-export function readOverlayAccessKey(env: Environment) {
-  readServerConfig(env)
-  const key = env.OVERLAY_ACCESS_KEY?.trim()
-  if (!key || !/^[A-Za-z0-9_-]{32,128}$/.test(key)) {
-    throw new OverlayAccessError("overlay_configuration", 503)
-  }
-  return key
+export function overlaySecretHash(secret: string) {
+  return createHash("sha256").update(secret).digest("hex")
 }
 
-export function requireOverlayAccess(
-  authorization: string | null,
-  expectedKey: string
-) {
+export function parseOverlaySecret(authorization: string | null) {
   const match = /^Bearer ([A-Za-z0-9_-]{32,128})$/.exec(authorization ?? "")
   if (!match) throw new OverlayAccessError("unauthorized", 401)
-  const supplied = Buffer.from(match[1])
-  const expected = Buffer.from(expectedKey)
+  return match[1]
+}
+
+export function requireOverlayAccess(secret: string, expectedHash: string) {
+  const supplied = Buffer.from(overlaySecretHash(secret))
+  const expected = Buffer.from(expectedHash)
   if (
     supplied.length !== expected.length ||
     !timingSafeEqual(supplied, expected)

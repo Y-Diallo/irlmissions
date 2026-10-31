@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server"
-import {
-  OverlayAccessError,
-  readOverlayAccessKey,
-  requireOverlayAccess,
-} from "@/shared/overlay-access"
-import { readRealtimeIrlPullKey, RealtimeIrlError } from "@/shared/realtimeirl"
+import { OverlayAccessError } from "@/shared/overlay-access"
+import { RealtimeIrlError } from "@/shared/realtimeirl"
 
 export const runtime = "nodejs"
 
@@ -15,9 +11,20 @@ const HEADERS = {
 
 export async function GET(request: Request) {
   try {
-    const overlayKey = readOverlayAccessKey(process.env)
-    requireOverlayAccess(request.headers.get("authorization"), overlayKey)
-    const pullKey = readRealtimeIrlPullKey(process.env)
+    const [{ requireOverlayTenant }, { getServerFirebase }] = await Promise.all([
+      import("@/lib/overlay/access-server"),
+      import("@/lib/firebase/admin"),
+    ])
+    const tenantId = await requireOverlayTenant(request)
+    const integration = (
+      await getServerFirebase().db.doc(
+        `owners/${tenantId}/private/integrations`
+      ).get()
+    ).data()
+    const pullKey = integration?.realtimeIrlPullKey
+    if (typeof pullKey !== "string" || !pullKey) {
+      throw new RealtimeIrlError("realtimeirl_configuration", 503)
+    }
     return NextResponse.json({ pullKey }, { headers: HEADERS })
   } catch (error) {
     if (

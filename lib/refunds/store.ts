@@ -3,12 +3,13 @@ import "server-only"
 import { FieldValue, type Firestore } from "firebase-admin/firestore"
 import { queueRefund, toRefundItem, type RefundItem } from "@/shared/refunds"
 import type { ReviewRecord } from "@/shared/pitches/review"
+import { tenantDoc } from "@/shared/tenant"
 
 const LIMIT = 100
 
-export function createRefundStore(db: Firestore) {
+export function createRefundStore(db: Firestore, tenantId: string) {
   const query = db
-    .collection("pitches")
+    .collection(tenantDoc(tenantId, "pitches"))
     .orderBy("createdAt", "desc")
     .limit(LIMIT)
 

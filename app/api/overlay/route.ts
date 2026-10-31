@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server"
-import {
-  OverlayAccessError,
-  readOverlayAccessKey,
-  requireOverlayAccess,
-} from "@/shared/overlay-access"
+import { OverlayAccessError } from "@/shared/overlay-access"
 import { OverlayError } from "@/shared/overlay"
 
 export const runtime = "nodejs"
@@ -15,13 +11,16 @@ const HEADERS = {
 
 export async function GET(request: Request) {
   try {
-    const key = readOverlayAccessKey(process.env)
-    requireOverlayAccess(request.headers.get("authorization"), key)
-    const [{ getServerFirebase }, { createOverlayStore }] = await Promise.all([
+    const [{ requireOverlayTenant }, { getServerFirebase }, { createOverlayStore }] = await Promise.all([
+      import("@/lib/overlay/access-server"),
       import("@/lib/firebase/admin"),
       import("@/lib/overlay/store"),
     ])
-    const overlay = await createOverlayStore(getServerFirebase().db).read()
+    const tenantId = await requireOverlayTenant(request)
+    const overlay = await createOverlayStore(
+      getServerFirebase().db,
+      tenantId
+    ).read()
     return NextResponse.json({ overlay }, { headers: HEADERS })
   } catch (error) {
     if (error instanceof OverlayAccessError || error instanceof OverlayError) {

@@ -27,7 +27,6 @@ export class InvalidTwitchTokenError extends Error {}
 export type TwitchConfig = {
   clientId: string
   clientSecret: string
-  ownerId: string
   redirectUri: string
 }
 export type TokenPair = {
@@ -56,16 +55,21 @@ export interface TwitchAuthProvider {
   revoke(token: string): Promise<void>
 }
 export interface AuthStore {
-  readTokens(): Promise<TwitchCredentials | null>
+  readTokens(ownerId: string): Promise<TwitchCredentials | null>
   saveTokens(tokens: TwitchCredentials): Promise<void>
-  deleteTokens(accessToken: string): Promise<boolean>
+  deleteTokens(ownerId: string, accessToken: string): Promise<boolean>
   claimRefresh(
+    ownerId: string,
     accessToken: string,
     leaseId: string,
     now: number
   ): Promise<boolean>
-  finishRefresh(tokens: TwitchCredentials, leaseId: string): Promise<boolean>
-  releaseRefresh(leaseId: string): Promise<void>
+  finishRefresh(
+    ownerId: string,
+    tokens: TwitchCredentials,
+    leaseId: string
+  ): Promise<boolean>
+  releaseRefresh(ownerId: string, leaseId: string): Promise<void>
   saveHandoff(hash: string, handoff: Handoff): Promise<void>
   consumeHandoff(hash: string, now: number): Promise<Handoff | null>
 }
@@ -97,7 +101,6 @@ export function readTwitchConfig(env: Environment): TwitchConfig {
   const config = {
     clientId: required("TWITCH_CLIENT_ID"),
     clientSecret: required("TWITCH_CLIENT_SECRET"),
-    ownerId: required("TWITCH_OWNER_ID"),
     redirectUri: required("TWITCH_REDIRECT_URI"),
   }
   let uri: URL
@@ -107,7 +110,6 @@ export function readTwitchConfig(env: Environment): TwitchConfig {
     throw new AuthError("configuration", 503)
   }
   if (
-    !/^\d{1,32}$/.test(config.ownerId) ||
     uri.pathname !== "/api/auth/twitch/callback" ||
     uri.search ||
     uri.hash ||
@@ -171,10 +173,12 @@ export function authorizationUrl(config: TwitchConfig, state: string) {
 }
 export function verifyTwitchIdentity(
   config: TwitchConfig,
-  identity: TwitchIdentity
+  identity: TwitchIdentity,
+  expectedOwnerId?: string
 ) {
   if (
-    identity.userId !== config.ownerId ||
+    !/^\d{1,32}$/.test(identity.userId) ||
+    (expectedOwnerId !== undefined && identity.userId !== expectedOwnerId) ||
     identity.clientId !== config.clientId
   )
     throw new AuthError("owner", 403)
@@ -213,7 +217,7 @@ export async function completeTwitchLogin(
   await deps.store.saveTokens(tokens)
   const handoff = opaqueId()
   await deps.store.saveHandoff(hashHandoff(handoff), {
-    uid: ownerUid(config.ownerId),
+    uid: ownerUid(identity.userId),
     connectionId: tokens.connectionId,
     expiresAt: deps.now() + HANDOFF_SECONDS * 1000,
   })
@@ -221,12 +225,12 @@ export async function completeTwitchLogin(
 }
 
 async function disconnect(
-  config: TwitchConfig,
   deps: AuthDependencies,
+  ownerId: string,
   token: string
 ) {
-  if (await deps.store.deleteTokens(token))
-    await deps.revokeSessions(ownerUid(config.ownerId))
+  if (await deps.store.deleteTokens(ownerId, token))
+    await deps.revokeSessions(ownerUid(ownerId))
 }
 
 // Validate on every use: startup, foreground checks, and later privileged commands.
@@ -234,27 +238,27 @@ async function disconnect(
 export async function getTwitchAccessToken(
   config: TwitchConfig,
   deps: AuthDependencies,
+  ownerId: string,
   forceRefresh = false
 ) {
-  const current = await deps.store.readTokens()
+  if (!/^\d{1,32}$/.test(ownerId)) throw new AuthError("owner", 403)
+  const current = await deps.store.readTokens(ownerId)
   if (!current) throw new AuthError("expired")
-  if (
-    current.userId !== config.ownerId ||
-    current.clientId !== config.clientId
-  ) {
-    await disconnect(config, deps, current.accessToken)
+  if (current.userId !== ownerId || current.clientId !== config.clientId) {
+    await disconnect(deps, ownerId, current.accessToken)
     throw new AuthError("owner", 403)
   }
   if (!forceRefresh) {
     try {
       verifyTwitchIdentity(
         config,
-        await deps.provider.validate(current.accessToken)
+        await deps.provider.validate(current.accessToken),
+        ownerId
       )
       return current.accessToken
     } catch (error) {
       if (error instanceof AuthError && error.status === 403) {
-        await disconnect(config, deps, current.accessToken)
+        await disconnect(deps, ownerId, current.accessToken)
         throw error
       }
       if (!(error instanceof InvalidTwitchTokenError)) throw error
@@ -262,7 +266,12 @@ export async function getTwitchAccessToken(
   }
   const leaseId = opaqueId()
   if (
-    !(await deps.store.claimRefresh(current.accessToken, leaseId, deps.now()))
+    !(await deps.store.claimRefresh(
+      ownerId,
+      current.accessToken,
+      leaseId,
+      deps.now()
+    ))
   )
     throw new AuthError("busy", 503)
   let activeToken = current.accessToken
@@ -275,11 +284,11 @@ export async function getTwitchAccessToken(
       ...pair,
       expiresAt: deps.now() + pair.expiresIn * 1000,
     }
-    if (!(await deps.store.finishRefresh(updated, leaseId)))
+    if (!(await deps.store.finishRefresh(ownerId, updated, leaseId)))
       throw new AuthError("busy", 503)
     activeToken = pair.accessToken
     const identity = await deps.provider.validate(pair.accessToken)
-    verifyTwitchIdentity(config, identity)
+    verifyTwitchIdentity(config, identity, ownerId)
     return updated.accessToken
   } catch (error) {
     if (
@@ -287,12 +296,12 @@ export async function getTwitchAccessToken(
       (error instanceof AuthError &&
         (error.code === "expired" || error.status === 403))
     ) {
-      await disconnect(config, deps, activeToken)
+      await disconnect(deps, ownerId, activeToken)
       throw new AuthError("expired")
     }
     throw error
   } finally {
-    await deps.store.releaseRefresh(leaseId)
+    await deps.store.releaseRefresh(ownerId, leaseId)
   }
 }
 
@@ -307,16 +316,20 @@ export async function exchangeHandoff(
     hashHandoff(handoff),
     deps.now()
   )
-  const tokens = await deps.store.readTokens()
+  const ownerId = record?.uid.startsWith("twitch:")
+    ? record.uid.slice("twitch:".length)
+    : ""
+  const tokens = ownerId ? await deps.store.readTokens(ownerId) : null
   if (
     !record ||
-    record.uid !== ownerUid(config.ownerId) ||
+    !/^\d{1,32}$/.test(ownerId) ||
+    record.uid !== ownerUid(ownerId) ||
     record.connectionId !== tokens?.connectionId
   )
     throw new AuthError("expired")
-  await getTwitchAccessToken(config, deps)
+  await getTwitchAccessToken(config, deps, ownerId)
   return deps.mintToken(record.uid, {
     owner: true,
-    twitchUserId: config.ownerId,
+    twitchUserId: ownerId,
   })
 }

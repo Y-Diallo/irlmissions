@@ -35,7 +35,7 @@ const context = { params: Promise.resolve({ redemptionId: "redemption-1" }) }
 
 describe("owner pitch routes", () => {
   it("lists private review data only after owner verification", async () => {
-    mocks.requireOwner.mockResolvedValue({ uid: "demo-owner" })
+    mocks.requireOwner.mockResolvedValue({ uid: "demo-owner", tenantId: "demo-owner" })
     mocks.list.mockResolvedValue([{ redemptionId: "redemption-1" }])
 
     const response = await GET(
@@ -60,7 +60,7 @@ describe("owner pitch routes", () => {
   })
 
   it("validates and applies an explicit approval command", async () => {
-    mocks.requireOwner.mockResolvedValue({ uid: "demo-owner" })
+    mocks.requireOwner.mockResolvedValue({ uid: "demo-owner", tenantId: "demo-owner" })
     mocks.update.mockResolvedValue({ updated: true })
 
     const response = await PATCH(
@@ -84,7 +84,7 @@ describe("owner pitch routes", () => {
   })
 
   it("returns 400 for malformed commands before touching storage", async () => {
-    mocks.requireOwner.mockResolvedValue({ uid: "demo-owner" })
+    mocks.requireOwner.mockResolvedValue({ uid: "demo-owner", tenantId: "demo-owner" })
 
     const response = await PATCH(
       new Request(`${base}/redemption-1`, {
@@ -107,7 +107,7 @@ describe("owner pitch routes", () => {
   })
 
   it("runs one requested pitch only after owner verification", async () => {
-    mocks.requireOwner.mockResolvedValue({ uid: "demo-owner" })
+    mocks.requireOwner.mockResolvedValue({ uid: "demo-owner", tenantId: "demo-owner" })
     mocks.runPitchNow.mockResolvedValue({ outcome: "ready_for_review" })
 
     const response = await POST(
@@ -119,6 +119,9 @@ describe("owner pitch routes", () => {
     )
 
     expect(response.status).toBe(200)
-    expect(mocks.runPitchNow).toHaveBeenCalledWith("redemption-1")
+    expect(mocks.runPitchNow).toHaveBeenCalledWith(
+      "demo-owner",
+      "redemption-1"
+    )
   })
 })

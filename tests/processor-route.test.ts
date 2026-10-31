@@ -10,8 +10,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/internal/google-oidc", () => ({
   verifyGoogleIdToken: mocks.verify,
 }))
-vi.mock("@/lib/pitches/runner", () => ({
-  runClaimablePitches: mocks.run,
+vi.mock("@/lib/tenants/processor", () => ({
+  runScheduledTenants: mocks.run,
 }))
 
 import { POST } from "@/app/api/internal/process/route"
@@ -37,11 +37,9 @@ describe("scheduled processor route", () => {
     })
     mocks.verify.mockResolvedValue({ email, email_verified: true })
     mocks.run.mockResolvedValue({
-      scanned: 2,
-      readyForReview: 1,
-      rejected: 1,
-      retrying: 0,
-      skipped: 0,
+      tenantsScanned: 2,
+      tenantsProcessed: 2,
+      tenantErrors: 0,
     })
     const response = await POST(
       new Request(audience, {
@@ -50,8 +48,10 @@ describe("scheduled processor route", () => {
       })
     )
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toMatchObject({ scanned: 2 })
-    expect(mocks.run).toHaveBeenCalledWith(5)
+    await expect(response.json()).resolves.toMatchObject({
+      tenantsScanned: 2,
+    })
+    expect(mocks.run).toHaveBeenCalledWith()
   })
 
   it("rejects the wrong identity before loading processor work", async () => {

@@ -9,6 +9,7 @@ import {
   type MissionAction,
   type MissionRecord,
 } from "@/shared/missions"
+import { tenantDoc } from "@/shared/tenant"
 
 function missionFrom(data: FirebaseFirestore.DocumentData | undefined) {
   const mission = data?.mission
@@ -17,9 +18,9 @@ function missionFrom(data: FirebaseFirestore.DocumentData | undefined) {
     : null
 }
 
-export function createMissionStore(db: Firestore) {
-  const sessionRef = db.doc("sessions/current")
-  const publicStateRef = db.doc("publicState/current")
+export function createMissionStore(db: Firestore, tenantId: string) {
+  const sessionRef = db.doc(tenantDoc(tenantId, "sessions/current"))
+  const publicStateRef = db.doc(tenantDoc(tenantId, "publicState/current"))
   return {
     async read() {
       const mission = missionFrom((await sessionRef.get()).data())
@@ -36,7 +37,10 @@ export function createMissionStore(db: Firestore) {
 
         const terminal = next.status === "completed" || next.status === "failed"
         const pitchRef = db.doc(
-          `pitches/${eventSubStorageId(current.redemptionId)}`
+          tenantDoc(
+            tenantId,
+            `pitches/${eventSubStorageId(current.redemptionId)}`
+          )
         )
         const pitch = terminal ? await tx.get(pitchRef) : null
         if (terminal) {

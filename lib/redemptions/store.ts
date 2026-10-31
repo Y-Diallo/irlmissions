@@ -8,9 +8,12 @@ import type {
   RedemptionResolution,
   RedemptionStore,
 } from "@/shared/redemptions"
+import { tenantDoc } from "@/shared/tenant"
 
-function pitchRef(db: Firestore, redemptionId: string) {
-  return db.doc(`pitches/${eventSubStorageId(redemptionId)}`)
+function pitchRef(db: Firestore, tenantId: string, redemptionId: string) {
+  return db.doc(
+    tenantDoc(tenantId, `pitches/${eventSubStorageId(redemptionId)}`)
+  )
 }
 
 function resolution(data: FirebaseFirestore.DocumentData | undefined) {
@@ -20,11 +23,14 @@ function resolution(data: FirebaseFirestore.DocumentData | undefined) {
     : null
 }
 
-export function createRedemptionStore(db: Firestore): RedemptionStore {
+export function createRedemptionStore(
+  db: Firestore,
+  tenantId: string
+): RedemptionStore {
   return {
     claim(redemptionId, leaseId, now, claimedUntil) {
       return db.runTransaction(async (tx) => {
-        const ref = pitchRef(db, redemptionId)
+        const ref = pitchRef(db, tenantId, redemptionId)
         const snapshot = await tx.get(ref)
         if (!snapshot.exists) return null
         const data = snapshot.data()!
@@ -58,7 +64,7 @@ export function createRedemptionStore(db: Firestore): RedemptionStore {
     },
     complete(claim, now) {
       return db.runTransaction(async (tx) => {
-        const ref = pitchRef(db, claim.redemptionId)
+        const ref = pitchRef(db, tenantId, claim.redemptionId)
         const snapshot = await tx.get(ref)
         const current = resolution(snapshot.data())
         if (
@@ -84,7 +90,7 @@ export function createRedemptionStore(db: Firestore): RedemptionStore {
     },
     fail(claim, failure) {
       return db.runTransaction(async (tx) => {
-        const ref = pitchRef(db, claim.redemptionId)
+        const ref = pitchRef(db, tenantId, claim.redemptionId)
         const snapshot = await tx.get(ref)
         const current = resolution(snapshot.data())
         if (
@@ -112,13 +118,14 @@ export function createRedemptionStore(db: Firestore): RedemptionStore {
 
 export async function findClaimableRedemptionIds(
   db: Firestore,
+  tenantId: string,
   now: number,
   limit = 5
 ) {
   const snapshots = await Promise.all(
     ["pending", "error", "processing"].map((status) =>
       db
-        .collection("pitches")
+        .collection(tenantDoc(tenantId, "pitches"))
         .where("redemptionResolution.status", "==", status)
         .limit(20)
         .get()

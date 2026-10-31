@@ -18,7 +18,9 @@ export async function PATCH(
       import("@/lib/firebase/admin"),
       import("@/lib/pitches/review-store"),
     ])
-    await requireServerOwner(request.headers.get("authorization"))
+    const owner = await requireServerOwner(
+      request.headers.get("authorization")
+    )
     const { redemptionId } = await params
     if (
       !redemptionId ||
@@ -28,11 +30,10 @@ export async function PATCH(
       throw new PitchReviewError("invalid_redemption_id", 400)
     }
     const command = parseReviewCommand(await request.json())
-    const result = await createPitchReviewStore(getServerFirebase().db).update(
-      redemptionId,
-      command,
-      Date.now()
-    )
+    const result = await createPitchReviewStore(
+      getServerFirebase().db,
+      owner.tenantId
+    ).update(redemptionId, command, Date.now())
     return NextResponse.json(result, { headers: NO_STORE })
   } catch (error) {
     if (error instanceof SyntaxError) {

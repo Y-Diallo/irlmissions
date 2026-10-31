@@ -24,6 +24,7 @@ import { createAuthStore } from "@/lib/auth/store"
 import { createEventSubStore } from "@/lib/eventsub/store"
 import { createPitchStore, findClaimablePitchIds } from "@/lib/pitches/store"
 import { createPitchReviewStore } from "@/lib/pitches/review-store"
+import { createOverlayAccessStore } from "@/lib/overlay/access-store"
 import {
   completeTwitchLogin,
   createOAuthState,
@@ -135,11 +136,8 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
       const verify = (token: string) =>
         getAdminAuth(admin).verifyIdToken(token, true)
       await expect(
-        authenticateOwner(bearer, { mode: "live", ownerId: "42" }, verify)
-      ).resolves.toMatchObject({ uid: "twitch:42" })
-      await expect(
-        authenticateOwner(bearer, { mode: "live", ownerId: "99" }, verify)
-      ).rejects.toThrow("owner")
+        authenticateOwner(bearer, { mode: "live" }, verify)
+      ).resolves.toMatchObject({ uid: "twitch:42", tenantId: "42" })
       await signOut(getAuth(client))
     })
 
@@ -147,8 +145,8 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
       const store = createAuthStore(getAdminFirestore(admin))
       await store.saveTokens(credentials)
       const claims = await Promise.all([
-        store.claimRefresh(credentials.accessToken, "lease-a", Date.now()),
-        store.claimRefresh(credentials.accessToken, "lease-b", Date.now()),
+        store.claimRefresh("42", credentials.accessToken, "lease-a", Date.now()),
+        store.claimRefresh("42", credentials.accessToken, "lease-b", Date.now()),
       ])
       expect(claims.filter(Boolean)).toHaveLength(1)
       const winner = claims[0] ? "lease-a" : "lease-b"
@@ -159,11 +157,12 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
       })
       expect(
         await store.finishRefresh(
+          "42",
           { ...credentials, accessToken: "stale-refresh" },
           winner
         )
       ).toBe(false)
-      expect((await store.readTokens())?.accessToken).toBe("new-login")
+      expect((await store.readTokens("42"))?.accessToken).toBe("new-login")
     })
 
     it("consumes expired handoffs without granting a session", async () => {
@@ -179,7 +178,7 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
     })
 
     it("atomically deduplicates EventSub messages and redemption IDs", async () => {
-      const store = createEventSubStore(getAdminFirestore(admin))
+      const store = createEventSubStore(getAdminFirestore(admin), "42")
       const receipt = {
         messageId: "emulator-eventsub-message-a",
         messageType: "notification" as const,
@@ -224,13 +223,59 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
       ).resolves.toBe("duplicate-redemption")
     })
 
+    it("isolates identical event IDs and overlay credentials between tenants", async () => {
+      const db = getAdminFirestore(admin)
+      const receipt = {
+        messageId: "same-message",
+        messageType: "notification" as const,
+        subscriptionId: "subscription",
+        subscriptionType: "channel.channel_points_custom_reward_redemption.add",
+        subscriptionVersion: "1",
+        subscriptionStatus: "enabled",
+        receivedAt: Date.now(),
+      }
+      const pitch = (broadcasterId: string): EventSubWrite => ({
+        kind: "redemption",
+        receipt,
+        pitch: {
+          redemptionId: "same-redemption",
+          sourceMessageId: receipt.messageId,
+          broadcasterId,
+          viewer: { id: "viewer", login: "viewer", name: "Viewer" },
+          reward: { id: `reward-${broadcasterId}`, title: "Pitch", prompt: "", cost: 10 },
+          rawText: "Visit the park",
+          redeemedAt: new Date().toISOString(),
+          redemptionStatus: "unfulfilled",
+          reviewStatus: "processing",
+          processing: { status: "pending", attempts: 0, nextAttemptAt: 0 },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      })
+      await expect(createEventSubStore(db, "42").save(pitch("42"))).resolves.toBe(
+        "created"
+      )
+      await expect(createEventSubStore(db, "99").save(pitch("99"))).resolves.toBe(
+        "created"
+      )
+
+      const access = createOverlayAccessStore(db)
+      const first = await access.rotate("42", Date.now())
+      const second = await access.rotate("99", Date.now())
+      await expect(access.resolve(first.overlayId, first.secret)).resolves.toBe("42")
+      await expect(access.resolve(second.overlayId, second.secret)).resolves.toBe("99")
+      await expect(access.resolve(first.overlayId, second.secret)).rejects.toThrow(
+        "unauthorized"
+      )
+    })
+
     it("claims a pitch once and commits only for the active processing lease", async () => {
       const db = getAdminFirestore(admin)
       const redemptionId = "emulator-processor-redemption"
       const pitchId = (await import("@/shared/eventsub")).eventSubStorageId(
         redemptionId
       )
-      await db.doc(`pitches/${pitchId}`).set({
+      await db.doc(`owners/42/pitches/${pitchId}`).set({
         redemptionId,
         rawText: "Visit the public park",
         reviewStatus: "processing",
@@ -238,7 +283,7 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
         createdAt: 1000,
         updatedAt: 1000,
       })
-      const store = createPitchStore(db)
+      const store = createPitchStore(db, "42")
       const claims = await Promise.all([
         store.claim(redemptionId, "lease-one", 2000, 122000),
         store.claim(redemptionId, "lease-two", 2000, 122000),
@@ -279,7 +324,9 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
       await expect(store.reject(winner, "no_public_place", 3000)).resolves.toBe(
         true
       )
-      const saved = (await db.doc(`pitches/${pitchId}`).get()).data()
+      const saved = (
+        await db.doc(`owners/42/pitches/${pitchId}`).get()
+      ).data()
       expect(saved).toMatchObject({
         reviewStatus: "rejected",
         rejectionReason: "no_public_place",
@@ -323,7 +370,7 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
       ]
       await Promise.all(
         records.map((record, index) =>
-          db.doc(`pitches/recovery-${index}`).set({
+          db.doc(`owners/42/pitches/recovery-${index}`).set({
             ...record,
             rawText: "Synthetic pitch",
             reviewStatus: "processing",
@@ -332,7 +379,7 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
           })
         )
       )
-      const found = await findClaimablePitchIds(db, 2000, 5)
+      const found = await findClaimablePitchIds(db, "42", 2000, 5)
       expect(found).toEqual(
         expect.arrayContaining([
           `${prefix}-pending`,
@@ -349,7 +396,7 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
       const pitchId = (await import("@/shared/eventsub")).eventSubStorageId(
         redemptionId
       )
-      await db.doc(`pitches/${pitchId}`).set({
+      await db.doc(`owners/42/pitches/${pitchId}`).set({
         redemptionId,
         rawText: "Visit a public cafe",
         reviewStatus: "pending_review",
@@ -379,10 +426,12 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
         createdAt: 1000,
         updatedAt: 1000,
       })
-      const store = createPitchReviewStore(db)
+      const store = createPitchReviewStore(db, "42")
 
       await store.update(redemptionId, { action: "approve" }, 2000)
-      let saved = (await db.doc(`pitches/${pitchId}`).get()).data()
+      let saved = (
+        await db.doc(`owners/42/pitches/${pitchId}`).get()
+      ).data()
       expect(saved).toMatchObject({
         reviewStatus: "approved",
         approvedAt: 2000,
@@ -397,7 +446,7 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
         },
         3000
       )
-      saved = (await db.doc(`pitches/${pitchId}`).get()).data()
+      saved = (await db.doc(`owners/42/pitches/${pitchId}`).get()).data()
       expect(saved).toMatchObject({
         reviewStatus: "pending_review",
         publicLabel: "Edited mystery objective",
@@ -409,7 +458,7 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
         { action: "edit_raw", rawText: "Visit a public park" },
         4000
       )
-      saved = (await db.doc(`pitches/${pitchId}`).get()).data()
+      saved = (await db.doc(`owners/42/pitches/${pitchId}`).get()).data()
       expect(saved).toMatchObject({
         reviewStatus: "processing",
         processing: { status: "pending", attempts: 0, nextAttemptAt: 4000 },
@@ -446,6 +495,9 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
         )
         await assertFails(getDoc(doc(db, "eventsubMessages/private")))
         await assertFails(getDoc(doc(db, "pitches/private")))
+        await assertFails(getDoc(doc(db, "owners/42/private/twitch")))
+        await assertFails(getDoc(doc(db, "owners/42/private/integrations")))
+        await assertFails(getDoc(doc(db, "overlayAccess/private")))
       }
     )
   }

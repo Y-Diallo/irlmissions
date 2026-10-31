@@ -4,7 +4,6 @@ import {
   evaluateRealtimeIrlArrival,
   parseArrivalSettings,
   parseRealtimeIrlSample,
-  readRealtimeIrlPullKey,
   type ArrivalConfirmation,
 } from "@/shared/realtimeirl"
 
@@ -85,15 +84,6 @@ describe("RealtimeIRL arrival policy", () => {
     expect(() =>
       parseRealtimeIrlSample({ latitude: 91, longitude: 2, observedAt: now })
     ).toThrow("invalid_location_sample")
-  })
-
-  it("requires the server-only pull key", () => {
-    expect(readRealtimeIrlPullKey({ REALTIMEIRL_PULL_KEY: " pull-key " })).toBe(
-      "pull-key"
-    )
-    expect(() => readRealtimeIrlPullKey({})).toThrow(
-      "realtimeirl_configuration"
-    )
   })
 
   it("does not save stale or future samples as current location", () => {

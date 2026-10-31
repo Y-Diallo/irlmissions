@@ -25,7 +25,7 @@ afterEach(() => vi.clearAllMocks())
 
 describe("owner mission routes", () => {
   it("returns the private mission only after owner verification", async () => {
-    mocks.requireOwner.mockResolvedValue({ uid: "twitch:42" })
+    mocks.requireOwner.mockResolvedValue({ uid: "twitch:42", tenantId: "42" })
     mocks.read.mockResolvedValue({ status: "heading", destination: {} })
     const response = await GET(
       new Request(url, { headers: { authorization: "Bearer owner" } })
@@ -40,7 +40,7 @@ describe("owner mission routes", () => {
   it.each(["arrive", "complete", "fail"])(
     "applies the %s command with a server timestamp",
     async (action) => {
-      mocks.requireOwner.mockResolvedValue({ uid: "twitch:42" })
+      mocks.requireOwner.mockResolvedValue({ uid: "twitch:42", tenantId: "42" })
       mocks.act.mockResolvedValue({ status: action })
       const response = await PATCH(
         new Request(url, {
@@ -58,7 +58,7 @@ describe("owner mission routes", () => {
   )
 
   it("rejects malformed actions before storage", async () => {
-    mocks.requireOwner.mockResolvedValue({ uid: "twitch:42" })
+    mocks.requireOwner.mockResolvedValue({ uid: "twitch:42", tenantId: "42" })
     const response = await PATCH(
       new Request(url, {
         method: "PATCH",

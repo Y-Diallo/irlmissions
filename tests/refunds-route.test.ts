@@ -29,7 +29,7 @@ afterEach(() => vi.clearAllMocks())
 
 describe("owner refund routes", () => {
   it("lists the refund projection only after owner verification", async () => {
-    mocks.requireOwner.mockResolvedValue({ uid: "twitch:42" })
+    mocks.requireOwner.mockResolvedValue({ uid: "twitch:42", tenantId: "42" })
     mocks.list.mockResolvedValue([
       { redemptionId: "redemption-1", state: "eligible" },
     ])
@@ -46,7 +46,7 @@ describe("owner refund routes", () => {
   })
 
   it("queues unused pitches with a server timestamp", async () => {
-    mocks.requireOwner.mockResolvedValue({ uid: "twitch:42" })
+    mocks.requireOwner.mockResolvedValue({ uid: "twitch:42", tenantId: "42" })
     mocks.queueUnused.mockResolvedValue({ queued: 3, skipped: 2 })
     const response = await POST(
       new Request(url, {
@@ -64,7 +64,7 @@ describe("owner refund routes", () => {
   })
 
   it("rejects malformed commands without queueing refunds", async () => {
-    mocks.requireOwner.mockResolvedValue({ uid: "twitch:42" })
+    mocks.requireOwner.mockResolvedValue({ uid: "twitch:42", tenantId: "42" })
     const response = await POST(
       new Request(url, {
         method: "POST",

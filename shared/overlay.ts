@@ -1,6 +1,11 @@
 import type { MissionRecord } from "@/shared/missions"
 import type { PollRecord } from "@/shared/polls"
 
+type RevealedPlace = {
+  placeName?: string
+  hasPlacePhoto?: true
+}
+
 export type OverlayProjection =
   | { state: "idle"; updatedAt: number }
   | {
@@ -14,19 +19,17 @@ export type OverlayProjection =
       updatedAt: number
       objective: string
     }
-  | {
+  | ({
       state: "arrived"
       updatedAt: number
       objective: string
       timerEndsAt: number
-      placeName?: string
-    }
-  | {
+    } & RevealedPlace)
+  | ({
       state: "completed" | "failed"
       updatedAt: number
       objective: string
-      placeName?: string
-    }
+    } & RevealedPlace)
 
 export class OverlayError extends Error {
   constructor(
@@ -54,8 +57,12 @@ export function votingOverlay(poll: PollRecord): OverlayProjection {
   }
 }
 
-function revealedPlace(mission: MissionRecord) {
-  return mission.destinationRevealedAt ? mission.destination.name : undefined
+function revealedPlace(mission: MissionRecord): RevealedPlace {
+  if (!mission.destinationRevealedAt) return {}
+  return {
+    placeName: mission.destination.name,
+    hasPlacePhoto: true,
+  }
 }
 
 export function missionOverlay(mission: MissionRecord): OverlayProjection {
@@ -68,21 +75,19 @@ export function missionOverlay(mission: MissionRecord): OverlayProjection {
   }
   if (mission.status === "arrived") {
     if (!mission.timerEndsAt) throw new OverlayError("mission_timer_missing")
-    const placeName = revealedPlace(mission)
     return {
       state: "arrived",
       updatedAt: mission.updatedAt,
       objective: mission.publicLabel,
       timerEndsAt: mission.timerEndsAt,
-      ...(placeName ? { placeName } : {}),
+      ...revealedPlace(mission),
     }
   }
-  const placeName = revealedPlace(mission)
   return {
     state: mission.status,
     updatedAt: mission.updatedAt,
     objective: mission.publicLabel,
-    ...(placeName ? { placeName } : {}),
+    ...revealedPlace(mission),
   }
 }
 
@@ -146,10 +151,13 @@ export function toOverlayView(value: unknown): OverlayProjection {
     throw new OverlayError("invalid_overlay_projection")
   }
   const objective = text(input.objective, 25)
-  const place =
+  const place: RevealedPlace =
     input.placeName === undefined
       ? {}
-      : { placeName: text(input.placeName, 120) }
+      : {
+          placeName: text(input.placeName, 120),
+          ...(input.hasPlacePhoto === true ? { hasPlacePhoto: true } : {}),
+        }
   if (input.state === "arrived") {
     return {
       state: "arrived",

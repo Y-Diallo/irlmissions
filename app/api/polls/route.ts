@@ -28,8 +28,13 @@ export async function GET(request: Request) {
         import("@/lib/firebase/admin"),
         import("@/lib/polls/store"),
       ])
-    await requireServerOwner(request.headers.get("authorization"))
-    const poll = await createPollStore(getServerFirebase().db).read()
+    const owner = await requireServerOwner(
+      request.headers.get("authorization")
+    )
+    const poll = await createPollStore(
+      getServerFirebase().db,
+      owner.tenantId
+    ).read()
     return NextResponse.json({ poll }, { headers: NO_STORE })
   } catch (error) {
     return failure(error)
@@ -39,11 +44,13 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const { requireServerOwner } = await import("@/lib/auth/server")
-    await requireServerOwner(request.headers.get("authorization"))
+    const owner = await requireServerOwner(
+      request.headers.get("authorization")
+    )
     const command = parseStartPollCommand(await request.json())
     const { startLivePoll } = await import("@/lib/polls/service")
     return NextResponse.json(
-      { poll: await startLivePoll(command) },
+      { poll: await startLivePoll(owner.tenantId, command) },
       { headers: NO_STORE }
     )
   } catch (error) {

@@ -96,7 +96,7 @@ function required(env: Environment, key: string) {
   return value
 }
 
-export function readEventSubConfig(env: Environment): EventSubConfig {
+export function readEventSubSecret(env: Environment) {
   if (readServerConfig(env).mode !== "live") {
     throw new EventSubError("not_found", 404)
   }
@@ -104,15 +104,18 @@ export function readEventSubConfig(env: Environment): EventSubConfig {
   if (secret.length < 10 || secret.length > 100) {
     throw new Error("TWITCH_EVENTSUB_SECRET must be 10 to 100 characters")
   }
-  const broadcasterId = required(env, "TWITCH_OWNER_ID")
-  if (!/^\d{1,32}$/.test(broadcasterId)) {
-    throw new Error("TWITCH_OWNER_ID must be a numeric Twitch user ID")
+  return secret
+}
+
+export function readEventSubConfig(
+  env: Environment,
+  broadcasterId: string,
+  rewardId: string
+): EventSubConfig {
+  if (!/^\d{1,32}$/.test(broadcasterId) || !rewardId) {
+    throw new EventSubError("unknown_broadcaster", 404)
   }
-  return {
-    secret,
-    broadcasterId,
-    rewardId: required(env, "TWITCH_REWARD_ID"),
-  }
+  return { secret: readEventSubSecret(env), broadcasterId, rewardId }
 }
 
 function text(
@@ -176,6 +179,29 @@ function parseBody(rawBody: string) {
     if (error instanceof EventSubError) throw error
     throw new EventSubError("invalid_json", 400)
   }
+}
+
+export function identifyEventSubTenant(
+  secret: string,
+  input: { headers: EventSubHeaders; rawBody: string },
+  now = Date.now()
+) {
+  verifyEnvelope(
+    { secret, broadcasterId: "", rewardId: "" },
+    input.headers,
+    input.rawBody,
+    now
+  )
+  const body = parseBody(input.rawBody)
+  const subscription = record(body.subscription, "subscription")
+  const condition = record(subscription.condition, "condition")
+  const broadcasterId = text(condition.broadcaster_user_id, "broadcaster_id", {
+    max: 32,
+  })
+  if (!/^\d{1,32}$/.test(broadcasterId)) {
+    throw new EventSubError("invalid_broadcaster_id", 400)
+  }
+  return broadcasterId
 }
 
 function expectedSubscription(

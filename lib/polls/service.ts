@@ -19,7 +19,7 @@ import { createPollStore } from "@/lib/polls/store"
 
 type PollStore = ReturnType<typeof createPollStore>
 
-async function liveDependencies(): Promise<{
+async function liveDependencies(tenantId: string): Promise<{
   store: PollStore
   provider: PollProvider
   now: () => number
@@ -28,12 +28,12 @@ async function liveDependencies(): Promise<{
   const config = readTwitchConfig(process.env)
   const auth = await loadAuthDependencies(config)
   return {
-    store: createPollStore(getServerFirebase().db),
+    store: createPollStore(getServerFirebase().db, tenantId),
     provider: createTwitchPollProvider({
-      broadcasterId: config.ownerId,
+      broadcasterId: tenantId,
       clientId: config.clientId,
       getAccessToken: (forceRefresh = false) =>
-        getTwitchAccessToken(config, auth, forceRefresh),
+        getTwitchAccessToken(config, auth, tenantId, forceRefresh),
     }),
     now: Date.now,
     newAttemptId: opaqueId,
@@ -105,10 +105,13 @@ export async function reconcilePoll(deps: PollServiceDependencies) {
   }
 }
 
-export async function startLivePoll(command: StartPollCommand) {
-  return startPoll(command, await liveDependencies())
+export async function startLivePoll(
+  tenantId: string,
+  command: StartPollCommand
+) {
+  return startPoll(command, await liveDependencies(tenantId))
 }
 
-export async function reconcileLivePoll() {
-  return reconcilePoll(await liveDependencies())
+export async function reconcileLivePoll(tenantId: string) {
+  return reconcilePoll(await liveDependencies(tenantId))
 }

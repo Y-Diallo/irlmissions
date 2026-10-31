@@ -24,6 +24,15 @@ export default function Page() {
           <TwitchLogin />
         )}
         <Link
+          href="/setup"
+          className={buttonVariants({
+            variant: "outline",
+            className: "min-h-12 w-fit px-4 text-base",
+          })}
+        >
+          Open setup
+        </Link>
+        <Link
           href="/refunds"
           className={buttonVariants({
             variant: "outline",

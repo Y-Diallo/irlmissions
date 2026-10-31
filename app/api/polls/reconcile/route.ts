@@ -7,9 +7,13 @@ export const runtime = "nodejs"
 export async function POST(request: Request) {
   try {
     const { requireServerOwner } = await import("@/lib/auth/server")
-    await requireServerOwner(request.headers.get("authorization"))
+    const owner = await requireServerOwner(
+      request.headers.get("authorization")
+    )
     const { reconcileLivePoll } = await import("@/lib/polls/service")
-    return NextResponse.json(await reconcileLivePoll(), { headers: NO_STORE })
+    return NextResponse.json(await reconcileLivePoll(owner.tenantId), {
+      headers: NO_STORE,
+    })
   } catch (error) {
     if (error instanceof PollError) {
       return NextResponse.json(

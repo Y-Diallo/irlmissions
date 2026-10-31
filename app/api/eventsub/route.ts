@@ -3,7 +3,9 @@ import { createEventSubStore } from "@/lib/eventsub/store"
 import {
   acceptEventSub,
   EventSubError,
+  identifyEventSubTenant,
   readEventSubConfig,
+  readEventSubSecret,
   type EventSubHeaders,
 } from "@/shared/eventsub"
 
@@ -30,15 +32,33 @@ function response(body: BodyInit | null, init: ResponseInit = {}) {
 
 export async function POST(request: Request) {
   try {
-    const config = readEventSubConfig(process.env)
     const rawBody = await request.text()
+    const input = { headers: headers(request), rawBody }
+    const broadcasterId = identifyEventSubTenant(
+      readEventSubSecret(process.env),
+      input
+    )
+    const integration = (
+      await getServerFirebase().db.doc(
+        `owners/${broadcasterId}/private/integrations`
+      ).get()
+    ).data()
+    const rewardId = integration?.rewardId
+    const config = readEventSubConfig(
+      process.env,
+      broadcasterId,
+      typeof rewardId === "string" ? rewardId : ""
+    )
     const result = await acceptEventSub(
       config,
-      { headers: headers(request), rawBody },
+      input,
       {
         store: {
           save(write) {
-            return createEventSubStore(getServerFirebase().db).save(write)
+            return createEventSubStore(
+              getServerFirebase().db,
+              broadcasterId
+            ).save(write)
           },
         },
         now: Date.now,

@@ -19,13 +19,11 @@ export const liveEnv = {
   FIRESTORE_EMULATOR_HOST: undefined,
   TWITCH_CLIENT_ID: "test-client",
   TWITCH_CLIENT_SECRET: "test-secret",
-  TWITCH_OWNER_ID: "42",
   TWITCH_REDIRECT_URI: "https://producer.example/api/auth/twitch/callback",
 }
 export const twitchConfig: TwitchConfig = {
   clientId: liveEnv.TWITCH_CLIENT_ID,
   clientSecret: liveEnv.TWITCH_CLIENT_SECRET,
-  ownerId: liveEnv.TWITCH_OWNER_ID,
   redirectUri: liveEnv.TWITCH_REDIRECT_URI,
 }
 export const clock = 1700000000000
@@ -45,22 +43,33 @@ export function authFixture() {
   let record: TwitchCredentials | null = { ...credentials }
   const handoffs = new Map<string, Handoff>()
   const store = {
-    readTokens: vi.fn(async () => record),
+    readTokens: vi.fn(async (_ownerId: string) => record),
     saveTokens: vi.fn(async (value: TwitchCredentials) => {
       record = value
     }),
-    deleteTokens: vi.fn(async (_expected: string) => {
+    deleteTokens: vi.fn(async (_ownerId: string, _expected: string) => {
       record = null
       return true
     }),
     claimRefresh: vi.fn(
-      async (_expected: string, _lease: string, _now: number) => true
+      async (
+        _ownerId: string,
+        _expected: string,
+        _lease: string,
+        _now: number
+      ) => true
     ),
-    finishRefresh: vi.fn(async (value: TwitchCredentials, _lease: string) => {
-      record = value
-      return true
-    }),
-    releaseRefresh: vi.fn(async (_lease: string) => {}),
+    finishRefresh: vi.fn(
+      async (
+        _ownerId: string,
+        value: TwitchCredentials,
+        _lease: string
+      ) => {
+        record = value
+        return true
+      }
+    ),
+    releaseRefresh: vi.fn(async (_ownerId: string, _lease: string) => {}),
     saveHandoff: vi.fn(async (hash: string, value: Handoff) => {
       handoffs.set(hash, value)
     }),

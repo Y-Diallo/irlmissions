@@ -59,7 +59,11 @@ export async function requireServerOwner(authorization: string | null) {
   )
   if (policy.mode === "live") {
     const config = readTwitchConfig(process.env)
-    await getTwitchAccessToken(config, await loadAuthDependencies(config))
+    await getTwitchAccessToken(
+      config,
+      await loadAuthDependencies(config),
+      identity.tenantId
+    )
   }
   return identity
 }

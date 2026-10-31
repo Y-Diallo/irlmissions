@@ -8,12 +8,13 @@ import {
   type ReviewCommand,
   type ReviewRecord,
 } from "@/shared/pitches/review"
+import { tenantDoc } from "@/shared/tenant"
 
-export function createPitchReviewStore(db: Firestore) {
+export function createPitchReviewStore(db: Firestore, tenantId: string) {
   return {
     async list() {
       const snapshot = await db
-        .collection("pitches")
+        .collection(tenantDoc(tenantId, "pitches"))
         .orderBy("createdAt", "desc")
         .limit(50)
         .get()
@@ -23,7 +24,9 @@ export function createPitchReviewStore(db: Firestore) {
     },
     update(redemptionId: string, command: ReviewCommand, now: number) {
       return db.runTransaction(async (tx) => {
-        const ref = db.doc(`pitches/${eventSubStorageId(redemptionId)}`)
+        const ref = db.doc(
+          tenantDoc(tenantId, `pitches/${eventSubStorageId(redemptionId)}`)
+        )
         const snapshot = await tx.get(ref)
         if (!snapshot.exists) throw new PitchReviewError("pitch_not_found", 404)
         const update = transitionPitchReview(

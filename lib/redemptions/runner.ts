@@ -16,23 +16,24 @@ import type { Firestore } from "firebase-admin/firestore"
 
 export async function processPendingRedemptions(
   db: Firestore,
+  tenantId: string,
   limit = 5,
   now = Date.now()
 ) {
   const twitch = readTwitchConfig(process.env)
   const auth = await loadAuthDependencies(twitch)
   const deps: RedemptionDependencies = {
-    store: createRedemptionStore(db),
+    store: createRedemptionStore(db, tenantId),
     provider: createTwitchRedemptionProvider({
-      broadcasterId: twitch.ownerId,
+      broadcasterId: tenantId,
       clientId: twitch.clientId,
       getAccessToken: (forceRefresh = false) =>
-        getTwitchAccessToken(twitch, auth, forceRefresh),
+        getTwitchAccessToken(twitch, auth, tenantId, forceRefresh),
     }),
     now: Date.now,
     leaseId: newRedemptionLeaseId,
   }
-  const ids = await findClaimableRedemptionIds(db, now, limit)
+  const ids = await findClaimableRedemptionIds(db, tenantId, now, limit)
   const results = await Promise.all(
     ids.map((id) => processRedemption(id, deps))
   )

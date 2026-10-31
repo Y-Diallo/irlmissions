@@ -22,8 +22,8 @@ export async function POST(request: Request) {
       config,
       verifyGoogleIdToken
     )
-    const { runClaimablePitches } = await import("@/lib/pitches/runner")
-    return NextResponse.json(await runClaimablePitches(5), { headers })
+    const { runScheduledTenants } = await import("@/lib/tenants/processor")
+    return NextResponse.json(await runScheduledTenants(), { headers })
   } catch (error) {
     if (error instanceof ProcessorScheduleError) {
       return NextResponse.json(

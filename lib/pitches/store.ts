@@ -6,16 +6,19 @@ import type {
   PitchStore,
   ProcessingContext,
 } from "@/shared/pitches/processor"
+import { tenantDoc } from "@/shared/tenant"
 
-function pitchRef(db: Firestore, redemptionId: string) {
-  return db.doc(`pitches/${eventSubStorageId(redemptionId)}`)
+function pitchRef(db: Firestore, tenantId: string, redemptionId: string) {
+  return db.doc(
+    tenantDoc(tenantId, `pitches/${eventSubStorageId(redemptionId)}`)
+  )
 }
 
-export function createPitchStore(db: Firestore): PitchStore {
+export function createPitchStore(db: Firestore, tenantId: string): PitchStore {
   return {
     claim(redemptionId, leaseId, now, claimedUntil) {
       return db.runTransaction(async (tx) => {
-        const ref = pitchRef(db, redemptionId)
+        const ref = pitchRef(db, tenantId, redemptionId)
         const snapshot = await tx.get(ref)
         if (!snapshot.exists) return null
         const data = snapshot.data()!
@@ -55,7 +58,7 @@ export function createPitchStore(db: Firestore): PitchStore {
     },
     complete(pitch, review, now) {
       return db.runTransaction(async (tx) => {
-        const ref = pitchRef(db, pitch.redemptionId)
+        const ref = pitchRef(db, tenantId, pitch.redemptionId)
         const data = (await tx.get(ref)).data()
         if (data?.processing?.leaseId !== pitch.leaseId) return false
         tx.update(ref, {
@@ -79,7 +82,7 @@ export function createPitchStore(db: Firestore): PitchStore {
     },
     reject(pitch, reason, now) {
       return db.runTransaction(async (tx) => {
-        const ref = pitchRef(db, pitch.redemptionId)
+        const ref = pitchRef(db, tenantId, pitch.redemptionId)
         const data = (await tx.get(ref)).data()
         if (data?.processing?.leaseId !== pitch.leaseId) return false
         tx.update(ref, {
@@ -103,7 +106,7 @@ export function createPitchStore(db: Firestore): PitchStore {
     },
     fail(pitch, failure) {
       return db.runTransaction(async (tx) => {
-        const ref = pitchRef(db, pitch.redemptionId)
+        const ref = pitchRef(db, tenantId, pitch.redemptionId)
         const data = (await tx.get(ref)).data()
         if (data?.processing?.leaseId !== pitch.leaseId) return false
         tx.update(ref, {
@@ -136,12 +139,12 @@ function object(value: unknown, field: string) {
   return value as Record<string, unknown>
 }
 
-export function createPitchContextProvider(db: Firestore) {
+export function createPitchContextProvider(db: Firestore, tenantId: string) {
   return {
     async read(): Promise<ProcessingContext> {
       const [settingsSnapshot, locationSnapshot] = await Promise.all([
-        db.doc("settings/current").get(),
-        db.doc("privateState/location").get(),
+        db.doc(tenantDoc(tenantId, "settings/current")).get(),
+        db.doc(tenantDoc(tenantId, "privateState/location")).get(),
       ])
       if (!settingsSnapshot.exists || !locationSnapshot.exists) {
         throw new Error("Processing settings or private location are missing")
@@ -182,14 +185,14 @@ export function createPitchContextProvider(db: Firestore) {
   }
 }
 
-export function createDuplicateSuggester(db: Firestore) {
+export function createDuplicateSuggester(db: Firestore, tenantId: string) {
   return {
     async suggest(input: {
       redemptionId: string
       destination: { placeId: string; name: string }
     }): Promise<DuplicateSuggestion[]> {
       const snapshot = await db
-        .collection("pitches")
+        .collection(tenantDoc(tenantId, "pitches"))
         .where("destination.placeId", "==", input.destination.placeId)
         .limit(10)
         .get()
@@ -214,13 +217,14 @@ export function createDuplicateSuggester(db: Firestore) {
 
 export async function findClaimablePitchIds(
   db: Firestore,
+  tenantId: string,
   now: number,
   limit = 5
 ) {
   const snapshots = await Promise.all(
     ["pending", "error", "processing"].map((status) =>
       db
-        .collection("pitches")
+        .collection(tenantDoc(tenantId, "pitches"))
         .where("processing.status", "==", status)
         .limit(20)
         .get()

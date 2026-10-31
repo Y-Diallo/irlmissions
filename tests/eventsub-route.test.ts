@@ -4,7 +4,13 @@ import { liveEnv } from "./auth-fixtures"
 import { demoEnv } from "./fixtures"
 
 const mocks = vi.hoisted(() => ({
-  getServerFirebase: vi.fn(() => ({ db: { synthetic: true } })),
+  getServerFirebase: vi.fn(() => ({
+    db: {
+      doc: vi.fn(() => ({
+        get: vi.fn(async () => ({ data: () => ({ rewardId: "reward-1" }) })),
+      })),
+    },
+  })),
   save: vi.fn(async () => "created" as const),
   createEventSubStore: vi.fn(),
 }))
@@ -27,7 +33,6 @@ function setLiveEnv() {
   for (const [key, value] of Object.entries({
     ...liveEnv,
     TWITCH_EVENTSUB_SECRET: secret,
-    TWITCH_REWARD_ID: "reward-1",
   })) {
     if (value === undefined) vi.stubEnv(key, undefined)
     else vi.stubEnv(key, value)
@@ -99,7 +104,7 @@ afterEach(() => {
 })
 
 describe("EventSub route", () => {
-  it("returns an exact challenge before initializing Firebase", async () => {
+  it("returns an exact challenge for the registered tenant", async () => {
     setLiveEnv()
     vi.setSystemTime(clock)
     const challenge = "exact opaque challenge"
@@ -114,7 +119,7 @@ describe("EventSub route", () => {
     expect(response.headers.get("content-length")).toBe(
       String(Buffer.byteLength(challenge))
     )
-    expect(mocks.getServerFirebase).not.toHaveBeenCalled()
+    expect(mocks.getServerFirebase).toHaveBeenCalled()
   })
 
   it("durably saves a valid notification before acknowledging it", async () => {
@@ -123,6 +128,10 @@ describe("EventSub route", () => {
     const response = await POST(request(payload()))
     expect(response.status).toBe(204)
     expect(mocks.save).toHaveBeenCalledOnce()
+    expect(mocks.createEventSubStore).toHaveBeenCalledWith(
+      expect.anything(),
+      "42"
+    )
     expect(mocks.save).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "redemption" })
     )

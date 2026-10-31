@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { demoEnv } from "./fixtures"
-
 const mocks = vi.hoisted(() => ({
-  getServerFirebase: vi.fn(() => ({ db: { synthetic: true } })),
+  getServerFirebase: vi.fn(() => ({
+    db: {
+      doc: vi.fn(() => ({
+        get: vi.fn(async () => ({
+          data: () => ({ realtimeIrlPullKey: "rtirl-pull-key" }),
+        })),
+      })),
+    },
+  })),
+  requireOverlayTenant: vi.fn(),
   record: vi.fn(),
 }))
 
@@ -12,22 +19,15 @@ vi.mock("@/lib/firebase/admin", () => ({
 vi.mock("@/lib/realtimeirl/store", () => ({
   createRealtimeIrlStore: () => ({ record: mocks.record }),
 }))
+vi.mock("@/lib/overlay/access-server", () => ({
+  requireOverlayTenant: mocks.requireOverlayTenant,
+}))
 
 import { GET as getConfig } from "@/app/api/realtimeirl/config/route"
 import { POST as postLocation } from "@/app/api/realtimeirl/location/route"
 
 const key = "overlay_test_key_1234567890_abcdef"
 const authorization = { authorization: `Bearer ${key}` }
-
-function setEnv() {
-  for (const [name, value] of Object.entries({
-    ...demoEnv,
-    OVERLAY_ACCESS_KEY: key,
-    REALTIMEIRL_PULL_KEY: "rtirl-pull-key",
-  })) {
-    vi.stubEnv(name, value)
-  }
-}
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -36,7 +36,7 @@ afterEach(() => {
 
 describe("RealtimeIRL scoped routes", () => {
   it("returns the pull key only to the keyed OBS source", async () => {
-    setEnv()
+    mocks.requireOverlayTenant.mockResolvedValue("42")
     const response = await getConfig(
       new Request("http://localhost/api/realtimeirl/config", {
         headers: authorization,
@@ -50,7 +50,10 @@ describe("RealtimeIRL scoped routes", () => {
   })
 
   it("rejects either scoped route before Firebase or secret access", async () => {
-    setEnv()
+    const { OverlayAccessError } = await import("@/shared/overlay-access")
+    mocks.requireOverlayTenant.mockRejectedValue(
+      new OverlayAccessError("unauthorized", 401)
+    )
     expect(
       (await getConfig(new Request("http://localhost/api/realtimeirl/config")))
         .status
@@ -68,7 +71,7 @@ describe("RealtimeIRL scoped routes", () => {
   })
 
   it("validates location bodies before initializing Firebase", async () => {
-    setEnv()
+    mocks.requireOverlayTenant.mockResolvedValue("42")
     const response = await postLocation(
       new Request("http://localhost/api/realtimeirl/location", {
         method: "POST",
@@ -77,11 +80,11 @@ describe("RealtimeIRL scoped routes", () => {
       })
     )
     expect(response.status).toBe(400)
-    expect(mocks.getServerFirebase).not.toHaveBeenCalled()
+    expect(mocks.record).not.toHaveBeenCalled()
   })
 
   it("records a valid sample and returns only its policy status", async () => {
-    setEnv()
+    mocks.requireOverlayTenant.mockResolvedValue("42")
     mocks.record.mockResolvedValue({
       status: "confirming",
       fresh: true,

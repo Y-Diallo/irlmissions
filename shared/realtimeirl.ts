@@ -1,4 +1,3 @@
-import type { Environment } from "@/shared/config"
 import { transitionMission, type MissionRecord } from "@/shared/missions"
 import { distanceMeters, type Coordinates } from "@/shared/pitches/processor"
 
@@ -125,14 +124,6 @@ export function parseArrivalSettings(value: unknown): ArrivalSettings {
       "arrival_configuration"
     ),
   }
-}
-
-export function readRealtimeIrlPullKey(env: Environment) {
-  const key = env.REALTIMEIRL_PULL_KEY?.trim()
-  if (!key || key.length > 256 || /[\u0000-\u001f\u007f]/.test(key)) {
-    throw new RealtimeIrlError("realtimeirl_configuration", 503)
-  }
-  return key
 }
 
 export function evaluateRealtimeIrlArrival(input: {

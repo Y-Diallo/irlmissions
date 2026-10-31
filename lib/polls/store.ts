@@ -11,11 +11,14 @@ import {
   type StartPollCommand,
   type TwitchPoll,
 } from "@/shared/polls"
+import { tenantDoc } from "@/shared/tenant"
 
 const IN_PROGRESS = new Set(["creating", "create_unknown", "active"])
 
-function pitchRef(db: Firestore, redemptionId: string) {
-  return db.doc(`pitches/${eventSubStorageId(redemptionId)}`)
+function pitchRef(db: Firestore, tenantId: string, redemptionId: string) {
+  return db.doc(
+    tenantDoc(tenantId, `pitches/${eventSubStorageId(redemptionId)}`)
+  )
 }
 
 function pollFromSession(data: FirebaseFirestore.DocumentData | undefined) {
@@ -27,9 +30,9 @@ function hasActiveMission(data: FirebaseFirestore.DocumentData | undefined) {
   return ["heading", "arrived"].includes(data?.mission?.status)
 }
 
-export function createPollStore(db: Firestore) {
-  const sessionRef = db.doc("sessions/current")
-  const publicStateRef = db.doc("publicState/current")
+export function createPollStore(db: Firestore, tenantId: string) {
+  const sessionRef = db.doc(tenantDoc(tenantId, "sessions/current"))
+  const publicStateRef = db.doc(tenantDoc(tenantId, "publicState/current"))
   return {
     async read(): Promise<PollRecord | null> {
       return pollFromSession((await sessionRef.get()).data())
@@ -48,7 +51,7 @@ export function createPollStore(db: Firestore) {
 
         const snapshots = []
         for (const redemptionId of command.redemptionIds) {
-          snapshots.push(await tx.get(pitchRef(db, redemptionId)))
+          snapshots.push(await tx.get(pitchRef(db, tenantId, redemptionId)))
         }
         const pitches = snapshots.flatMap((snapshot, index) => {
           if (!snapshot.exists) return []
@@ -120,7 +123,9 @@ export function createPollStore(db: Firestore) {
         if (current.status === "active") return current
         const snapshots = []
         for (const choice of current.choices) {
-          snapshots.push(await tx.get(pitchRef(db, choice.redemptionId)))
+          snapshots.push(
+            await tx.get(pitchRef(db, tenantId, choice.redemptionId))
+          )
         }
         const poll: PollRecord = {
           ...current,
