@@ -304,18 +304,6 @@ function PitchCard({
       </CardContent>
 
       <CardFooter className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        {pitch.redemptionResolution?.status === "error" && (
-          <Button
-            className="min-h-12 w-full text-base sm:w-auto"
-            variant="destructive"
-            disabled={busy || pitch.locked}
-            onClick={() =>
-              void act(() => mutate(pitch, { action: "retry_resolution" }))
-            }
-          >
-            Retry Twitch update
-          </Button>
-        )}
         {processing && (
           <Button
             className="min-h-12 w-full text-base sm:w-auto"

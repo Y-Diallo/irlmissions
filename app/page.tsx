@@ -1,6 +1,8 @@
+import Link from "next/link"
 import { DemoLogin } from "@/components/demo-login"
 import { PitchQueue } from "@/components/pitch-queue"
 import { TwitchLogin } from "@/components/twitch-login"
+import { buttonVariants } from "@/components/ui/button"
 
 export default function Page() {
   return (
@@ -21,6 +23,15 @@ export default function Page() {
         ) : (
           <TwitchLogin />
         )}
+        <Link
+          href="/refunds"
+          className={buttonVariants({
+            variant: "outline",
+            className: "min-h-12 w-fit px-4 text-base",
+          })}
+        >
+          Open refunds
+        </Link>
       </header>
       <PitchQueue />
     </main>
