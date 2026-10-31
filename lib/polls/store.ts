@@ -1,6 +1,7 @@
 import "server-only"
 import { FieldValue, type Firestore } from "firebase-admin/firestore"
 import { eventSubStorageId } from "@/shared/eventsub"
+import { votingOverlay } from "@/shared/overlay"
 import {
   PollError,
   attachTwitchPoll,
@@ -28,6 +29,7 @@ function hasActiveMission(data: FirebaseFirestore.DocumentData | undefined) {
 
 export function createPollStore(db: Firestore) {
   const sessionRef = db.doc("sessions/current")
+  const publicStateRef = db.doc("publicState/current")
   return {
     async read(): Promise<PollRecord | null> {
       return pollFromSession((await sessionRef.get()).data())
@@ -82,6 +84,7 @@ export function createPollStore(db: Firestore) {
         }
         const poll = attachTwitchPoll(current, twitchPoll, now)
         tx.set(sessionRef, { poll }, { merge: true })
+        tx.set(publicStateRef, votingOverlay(poll))
         return poll
       })
     },

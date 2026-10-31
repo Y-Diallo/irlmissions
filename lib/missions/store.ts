@@ -1,6 +1,7 @@
 import "server-only"
 import { FieldValue, type Firestore } from "firebase-admin/firestore"
 import { eventSubStorageId } from "@/shared/eventsub"
+import { missionOverlay } from "@/shared/overlay"
 import {
   MissionError,
   toMissionOwnerView,
@@ -18,6 +19,7 @@ function missionFrom(data: FirebaseFirestore.DocumentData | undefined) {
 
 export function createMissionStore(db: Firestore) {
   const sessionRef = db.doc("sessions/current")
+  const publicStateRef = db.doc("publicState/current")
   return {
     async read() {
       const mission = missionFrom((await sessionRef.get()).data())
@@ -44,6 +46,7 @@ export function createMissionStore(db: Firestore) {
         }
 
         tx.set(sessionRef, { mission: next }, { merge: true })
+        tx.set(publicStateRef, missionOverlay(next))
         if (terminal) {
           tx.update(pitchRef, {
             reviewStatus: next.status,

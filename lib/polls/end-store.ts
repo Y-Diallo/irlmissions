@@ -6,6 +6,7 @@ import {
   MissionError,
   type MissionRecord,
 } from "@/shared/missions"
+import { idleOverlay, missionOverlay } from "@/shared/overlay"
 import {
   attachTwitchPoll,
   matchesPollAttempt,
@@ -48,6 +49,7 @@ function twitchPollFromEvent(
 
 export function createPollEndStore(db: Firestore) {
   const sessionRef = db.doc("sessions/current")
+  const publicStateRef = db.doc("publicState/current")
   return {
     async findPending(limit = 5) {
       const snapshot = await db
@@ -150,6 +152,10 @@ export function createPollEndStore(db: Firestore) {
           sessionRef,
           { poll: resolution.poll, ...(mission ? { mission } : {}) },
           { merge: true }
+        )
+        tx.set(
+          publicStateRef,
+          mission ? missionOverlay(mission) : idleOverlay(now)
         )
         for (const snapshot of pitchSnapshots) {
           const redemptionId = snapshot.data()?.redemptionId

@@ -18,6 +18,7 @@ export type MissionRecord = {
   arrivedAt?: number
   timerEndsAt?: number
   outcomeAt?: number
+  destinationRevealedAt?: number
 }
 
 export type MissionPitch = {
