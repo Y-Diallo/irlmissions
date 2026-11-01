@@ -63,6 +63,7 @@ export type PitchReviewItem = {
   publicLabel: string
   durationMinutes: number
   riskFlags: RiskFlag[]
+  failConsequence: string | null
   destination: PlaceCandidate | null
   walkingRoute: WalkingRoute | null
   duplicateSuggestions: DuplicateSuggestion[]
@@ -171,6 +172,7 @@ export function toPitchReviewItem(record: ReviewRecord): PitchReviewItem {
     durationMinutes:
       record.durationMinutes ?? record.extraction?.durationMinutes ?? 10,
     riskFlags: record.extraction?.riskFlags ?? [],
+    failConsequence: record.extraction?.failConsequence || null,
     destination: record.destination ?? null,
     walkingRoute: record.walkingRoute ?? null,
     duplicateSuggestions: record.duplicateSuggestions ?? [],

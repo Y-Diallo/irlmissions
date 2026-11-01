@@ -33,6 +33,7 @@ const schema = {
     "publicLabelSuggestion",
     "durationMinutes",
     "riskFlags",
+    "failConsequence",
   ],
   properties: {
     placeQuery: {
@@ -50,6 +51,11 @@ const schema = {
         "A Twitch poll choice of at most 25 characters that restates what the viewer asked, in their words. Keep the activity and kind of place. Well-known chains with many locations (e.g. Spirit Halloween, Walmart) may be named; omit the names of local one-off businesses, street addresses, and neighborhoods.",
     },
     durationMinutes: { type: "integer", minimum: 1, maximum: 120 },
+    failConsequence: {
+      type: "string",
+      description:
+        "The penalty the viewer said the streamer must do if they fail (e.g. \"Eat a lemon\"), restated in at most 80 characters. Empty string if the viewer named none. Never invent one.",
+    },
     riskFlags: {
       type: "array",
       maxItems: 8,

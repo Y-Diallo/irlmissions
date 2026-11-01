@@ -25,6 +25,7 @@ const extraction = {
   publicLabelSuggestion: "Ten-item speed challenge",
   durationMinutes: 10,
   riskFlags: [],
+  failConsequence: "Eat a lemon",
 }
 
 describe("OpenAI pitch extractor", () => {

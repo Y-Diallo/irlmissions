@@ -33,6 +33,8 @@ export type OverlayProjection =
       state: "completed" | "failed"
       updatedAt: number
       objective: string
+      /** Only on a failed mission whose viewer named a penalty. */
+      consequence?: string
     } & RevealedPlace)
 
 export class OverlayError extends Error {
@@ -134,6 +136,9 @@ export function missionOverlay(mission: MissionRecord): OverlayProjection {
     state: mission.status,
     updatedAt: mission.updatedAt,
     objective: mission.publicLabel,
+    ...(mission.status === "failed" && mission.failConsequence
+      ? { consequence: mission.failConsequence }
+      : {}),
     ...revealedPlace(mission),
   }
 }
@@ -233,5 +238,13 @@ export function toOverlayView(value: unknown): OverlayProjection {
         input.chosenBy === undefined ? "Chat" : text(input.chosenBy, 25),
     }
   }
-  return { state: input.state, updatedAt, objective, ...place }
+  return {
+    state: input.state,
+    updatedAt,
+    objective,
+    ...(input.state === "failed" && input.consequence !== undefined
+      ? { consequence: text(input.consequence, 80) }
+      : {}),
+    ...place,
+  }
 }

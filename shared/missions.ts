@@ -11,6 +11,8 @@ export type MissionRecord = {
   redemptionId: string
   /** Twitch display name of the viewer who pitched it, shown on the overlay. */
   viewerName?: string
+  /** Viewer's stated penalty, shown on the overlay if the mission fails. */
+  failConsequence?: string
   status: MissionStatus
   publicLabel: string
   durationMinutes: number
@@ -33,6 +35,7 @@ export type MissionPitch = {
   walkingRoute?: unknown
   lockedBy?: unknown
   viewer?: unknown
+  extraction?: unknown
 }
 
 export type MissionAction = "arrive" | "complete" | "fail" | "extend"
@@ -174,7 +177,11 @@ function missionFromPitch(
     throw new MissionError("invalid_mission_details", 500)
   }
   const viewerName = object(pitch.viewer)?.name
+  const failConsequence = object(pitch.extraction)?.failConsequence
   return {
+    ...(typeof failConsequence === "string" && failConsequence.trim()
+      ? { failConsequence: failConsequence.trim().slice(0, 80) }
+      : {}),
     missionId,
     lockId: `mission:${missionId}`,
     pollId,

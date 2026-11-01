@@ -157,7 +157,9 @@ function Card({
           <p className="show-status show-status--terminal">
             {overlay.state === "completed"
               ? "Challenge cleared!"
-              : "Mission logged, on to the next one"}
+              : "consequence" in overlay && overlay.consequence
+                ? `Consequence: ${overlay.consequence}`
+                : "Mission failed, geeg"}
           </p>
         )}
         {photoVisible && photo.attributions.length > 0 && (

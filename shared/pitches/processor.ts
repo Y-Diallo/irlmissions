@@ -40,7 +40,11 @@ export type PitchExtraction = {
   publicLabelSuggestion: string
   durationMinutes: number
   riskFlags: RiskFlag[]
+  /** What the viewer said should happen on failure; "" when none. */
+  failConsequence?: string
 }
+
+export const MAX_FAIL_CONSEQUENCE_LENGTH = 80
 
 export type PlaceCandidate = Coordinates & {
   placeId: string
@@ -262,7 +266,16 @@ export function validateExtraction(value: PitchExtraction): PitchExtraction {
     ),
     durationMinutes,
     riskFlags,
+    failConsequence: fitConsequence(value.failConsequence),
   }
+}
+
+function fitConsequence(value: unknown) {
+  if (typeof value !== "string") return ""
+  const text = withoutDashes(value).replace(/\s+/g, " ")
+  return text.length <= MAX_FAIL_CONSEQUENCE_LENGTH
+    ? text
+    : `${text.slice(0, MAX_FAIL_CONSEQUENCE_LENGTH - 3).trimEnd()}...`
 }
 
 function fallbackExtraction(

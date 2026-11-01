@@ -235,6 +235,12 @@ function PitchCard({
               Save pitch and reprocess
             </Button>
           )}
+          {pitch.failConsequence && (
+            <p className="text-sm">
+              <span className="font-medium">If failed (shown on stream):</span>{" "}
+              {pitch.failConsequence}
+            </p>
+          )}
         </div>
 
         {reviewed && pitch.destination && pitch.walkingRoute && (

@@ -165,7 +165,7 @@ describe("public overlay projection", () => {
     expect(JSON.stringify(projection)).not.toContain("37.78")
   })
 
-  it("manual arrival publishes the timer but cannot reveal the place", () => {
+  it("publishes the place only once the arrival reveal is set", () => {
     const arrived: MissionRecord = {
       ...mission,
       status: "arrived",
@@ -189,6 +189,24 @@ describe("public overlay projection", () => {
       placeName: "Sample Cafe",
       hasPlacePhoto: true,
     })
+  })
+
+  it("shows the viewer's fail consequence only on a failed mission", () => {
+    const withPenalty = { ...mission, failConsequence: "Eat a lemon" }
+    expect(
+      missionOverlay({ ...withPenalty, status: "failed" })
+    ).toMatchObject({ consequence: "Eat a lemon" })
+    expect(
+      missionOverlay({ ...withPenalty, status: "completed" })
+    ).not.toHaveProperty("consequence")
+    expect(
+      toOverlayView({
+        state: "failed",
+        updatedAt: now,
+        objective: "Go",
+        consequence: "Eat a lemon",
+      })
+    ).toMatchObject({ consequence: "Eat a lemon" })
   })
 
   it("publishes only photo availability after reveal", () => {
