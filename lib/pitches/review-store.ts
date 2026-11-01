@@ -3,6 +3,7 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore"
 import { eventSubStorageId } from "@/shared/eventsub"
 import {
   PitchReviewError,
+  toPitchHistoryItem,
   toPitchReviewItem,
   transitionPitchReview,
   type ReviewCommand,
@@ -16,11 +17,25 @@ export function createPitchReviewStore(db: Firestore, tenantId: string) {
       const snapshot = await db
         .collection(tenantDoc(tenantId, "pitches"))
         .orderBy("createdAt", "desc")
-        .limit(50)
+        .limit(100)
         .get()
-      return snapshot.docs.map((document) =>
-        toPitchReviewItem(document.data() as ReviewRecord)
-      )
+      return snapshot.docs.flatMap((document) => {
+        const record = document.data() as ReviewRecord
+        return record.hiddenAt ? [] : [toPitchReviewItem(record)]
+      })
+    },
+    async history() {
+      const snapshot = await db
+        .collection(tenantDoc(tenantId, "pitches"))
+        .orderBy("createdAt", "desc")
+        .limit(100)
+        .get()
+      return snapshot.docs.flatMap((document) => {
+        const record = document.data() as ReviewRecord
+        return typeof record.hiddenAt === "number"
+          ? [toPitchHistoryItem(record)]
+          : []
+      })
     },
     update(redemptionId: string, command: ReviewCommand, now: number) {
       return db.runTransaction(async (tx) => {

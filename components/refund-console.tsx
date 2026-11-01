@@ -139,11 +139,12 @@ export function RefundConsole() {
       <Card className="border-destructive/30">
         <CardHeader>
           <CardTitle id="refund-heading" className="text-xl">
-            Refund unused pitches
+            Automatic refund status
           </CardTitle>
           <CardDescription>
-            Queues every unattempted, unlocked redemption for a Twitch Channel
-            Points refund. Active and completed missions are never included.
+            Removed, rejected, and unused pitches are automatically queued for a
+            Twitch Channel Points refund. Use the recovery button only if a
+            refund was missed or exhausted its retries.
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-3">
@@ -156,10 +157,10 @@ export function RefundConsole() {
             {busy
               ? "Queueing refunds…"
               : confirming
-                ? "Tap again to refund " + actionable
-                : "Refund " +
+                ? "Tap again to queue " + actionable
+                : "Retry/queue " +
                   actionable +
-                  " unused pitch" +
+                  " refund" +
                   (actionable === 1 ? "" : "es")}
           </Button>
           {confirming && (

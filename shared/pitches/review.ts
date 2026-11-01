@@ -42,6 +42,9 @@ export type ReviewRecord = {
   durationMinutes?: number
   rejectionReason?: string
   approvedAt?: number
+  /** Removed from the producer queue without deleting refund/audit state. */
+  hiddenAt?: number
+  removedFromStatus?: ReviewStatus
   lockedBy?: string
   /** Owner-forced anywhere mission, kept across reprocessing. */
   noTravel?: boolean
@@ -82,6 +85,16 @@ export type PitchReviewItem = {
   redemptionResolution: RedemptionResolution | null
 }
 
+export type PitchHistoryItem = {
+  redemptionId: string
+  viewerName: string
+  rawText: string
+  objective: string
+  removedAt: number
+  previousStatus: ReviewStatus
+  redemptionResolution: RedemptionResolution | null
+}
+
 export type ReviewCommand =
   | { action: "edit_raw"; rawText: string }
   | {
@@ -93,6 +106,7 @@ export type ReviewCommand =
   | { action: "set_no_travel"; noTravel: boolean }
   | { action: "approve" }
   | { action: "reject" }
+  | { action: "remove" }
   | { action: "retry" | "retry_resolution" }
 
 export type ReviewUpdate = {
@@ -174,6 +188,7 @@ export function parseReviewCommand(value: unknown): ReviewCommand {
       return { action: "set_no_travel", noTravel: input.noTravel }
     case "approve":
     case "reject":
+    case "remove":
     case "retry":
     case "retry_resolution":
       return { action: input.action }
@@ -218,6 +233,24 @@ export function toPitchReviewItem(record: ReviewRecord): PitchReviewItem {
     rejectionReason: record.rejectionReason ?? null,
     locked: !!record.lockedBy,
     revivable: isRevivable(record),
+    redemptionResolution: record.redemptionResolution ?? null,
+  }
+}
+
+export function toPitchHistoryItem(record: ReviewRecord): PitchHistoryItem {
+  if (typeof record.hiddenAt !== "number") {
+    throw new PitchReviewError("pitch_not_removed", 500)
+  }
+  return {
+    redemptionId: record.redemptionId,
+    viewerName: record.viewer?.name || record.viewer?.login || "Viewer",
+    rawText: record.rawText,
+    objective:
+      record.publicLabel ??
+      record.extraction?.challenge ??
+      record.rawText.slice(0, 80),
+    removedAt: record.hiddenAt,
+    previousStatus: record.removedFromStatus ?? record.reviewStatus,
     redemptionResolution: record.redemptionResolution ?? null,
   }
 }
@@ -311,6 +344,46 @@ export function transitionPitchReview(
   now: number
 ): ReviewUpdate {
   editable(record)
+  if (command.action === "remove") {
+    const attempted = ["active_mission", "completed", "failed"].includes(
+      record.reviewStatus
+    )
+    const settled =
+      record.redemptionStatus === "canceled" ||
+      record.redemptionStatus === "fulfilled" ||
+      record.redemptionResolution?.status === "complete"
+    const existingRefund =
+      record.redemptionResolution?.action === "refund"
+        ? record.redemptionResolution
+        : null
+    return {
+      values: {
+        hiddenAt: now,
+        removedFromStatus: record.reviewStatus,
+        updatedAt: now,
+        ...(!attempted && !settled
+          ? {
+              reviewStatus: "rejected",
+              rejectionReason: "owner_removed",
+              processing: {
+                status: "complete",
+                attempts: record.processing?.attempts ?? 0,
+                completedAt: now,
+              },
+              redemptionResolution:
+                existingRefund ??
+                ({
+                  action: "refund",
+                  status: "pending",
+                  attempts: 0,
+                  nextAttemptAt: now,
+                } satisfies RedemptionResolution),
+            }
+          : {}),
+      },
+      deleteFields: ["approvedAt"],
+    }
+  }
   if (command.action === "edit_raw") {
     return reprocess(record, { rawText: command.rawText }, now)
   }

@@ -344,6 +344,52 @@ describe("pitch review transitions", () => {
     ).toThrow("pitch_not_editable")
   })
 
+  it("removes any unlocked viewer pitch without deleting resolution state", () => {
+    const processing = transitionPitchReview(
+      record({
+        reviewStatus: "processing",
+        processing: { status: "processing", attempts: 1 },
+      }),
+      { action: "remove" },
+      now
+    )
+    expect(processing.values).toMatchObject({
+      hiddenAt: now,
+      reviewStatus: "rejected",
+      rejectionReason: "owner_removed",
+      processing: { status: "complete", attempts: 1 },
+      redemptionResolution: { action: "refund", status: "pending" },
+    })
+
+    const terminal = transitionPitchReview(
+      record({
+        reviewStatus: "completed",
+        redemptionResolution: {
+          action: "fulfill",
+          status: "processing",
+          attempts: 1,
+        },
+      }),
+      { action: "remove" },
+      now
+    )
+    expect(terminal.values).toEqual({
+      hiddenAt: now,
+      removedFromStatus: "completed",
+      updatedAt: now,
+    })
+    expect(() =>
+      transitionPitchReview(
+        record({ reviewStatus: "approved", lockedBy: "poll:active" }),
+        { action: "remove" },
+        now
+      )
+    ).toThrow("pitch_locked")
+    expect(parseReviewCommand({ action: "remove" })).toEqual({
+      action: "remove",
+    })
+  })
+
   it("validates commands and returns only the owner queue projection", () => {
     expect(
       parseReviewCommand({

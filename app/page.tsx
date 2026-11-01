@@ -23,24 +23,26 @@ export default function Page() {
         ) : (
           <TwitchLogin />
         )}
-        <Link
-          href="/setup"
-          className={buttonVariants({
-            variant: "outline",
-            className: "min-h-12 w-fit px-4 text-base",
-          })}
-        >
-          Open setup
-        </Link>
-        <Link
-          href="/refunds"
-          className={buttonVariants({
-            variant: "outline",
-            className: "min-h-12 w-fit px-4 text-base",
-          })}
-        >
-          Open refunds
-        </Link>
+        <nav className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Link
+            href="/setup"
+            className={buttonVariants({
+              variant: "outline",
+              className: "min-h-14 w-full px-4 text-base",
+            })}
+          >
+            Open setup
+          </Link>
+          <Link
+            href="/refunds"
+            className={buttonVariants({
+              variant: "outline",
+              className: "min-h-14 w-full px-4 text-base",
+            })}
+          >
+            Pitches &amp; refunds
+          </Link>
+        </nav>
       </header>
       <PitchQueue />
     </main>

@@ -152,7 +152,7 @@ export function MissionCard({
                 rel="noreferrer"
                 className={buttonVariants({
                   variant: "outline",
-                  className: "min-h-12 text-base",
+                  className: "min-h-14 text-base",
                 })}
               >
                 Google Maps
@@ -163,7 +163,7 @@ export function MissionCard({
                 rel="noreferrer"
                 className={buttonVariants({
                   variant: "outline",
-                  className: "min-h-12 text-base",
+                  className: "min-h-14 text-base",
                 })}
               >
                 Apple Maps
@@ -174,7 +174,7 @@ export function MissionCard({
                 rel="noreferrer"
                 className={buttonVariants({
                   variant: "outline",
-                  className: "min-h-12 text-base",
+                  className: "min-h-14 text-base",
                 })}
               >
                 Waze (driving)

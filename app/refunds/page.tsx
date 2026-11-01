@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { DemoLogin } from "@/components/demo-login"
 import { RefundConsole } from "@/components/refund-console"
+import { PitchHistory } from "@/components/pitch-history"
 import { TwitchLogin } from "@/components/twitch-login"
 import { buttonVariants } from "@/components/ui/button"
 
@@ -22,7 +23,7 @@ export default function RefundsPage() {
             IRL Missions
           </p>
           <h1 className="text-3xl font-semibold tracking-tight">
-            Twitch refunds
+            Pitches &amp; refunds
           </h1>
         </div>
         {process.env.NEXT_PUBLIC_APP_MODE === "emulator" ? (
@@ -32,6 +33,7 @@ export default function RefundsPage() {
         )}
       </header>
       <RefundConsole />
+      <PitchHistory />
     </main>
   )
 }

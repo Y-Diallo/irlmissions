@@ -133,6 +133,7 @@ function PitchCard({
   )
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
+  const [confirmRemove, setConfirmRemove] = useState(false)
   const serverRawText = useRef(pitch.rawText)
   const serverPublicLabel = useRef(pitch.publicLabel)
   const serverDuration = useRef(String(pitch.durationMinutes))
@@ -191,12 +192,44 @@ function PitchCard({
   const processing = pitch.reviewStatus === "processing"
   const terminal =
     pitch.reviewStatus === "completed" || pitch.reviewStatus === "failed"
+  const removeRefunds =
+    !terminal && pitch.redemptionResolution?.action !== "refund"
+
+  const removeButton =
+    pitch.reviewStatus === "active_mission" ? (
+      <Button className="min-h-14 w-full text-base" variant="outline" disabled>
+        Use the active mission controls
+      </Button>
+    ) : (
+      <Button
+        className="min-h-14 w-full text-base md:w-auto"
+        variant="destructive"
+        disabled={busy || pitch.locked}
+        onClick={() => {
+          if (!confirmRemove) {
+            setConfirmRemove(true)
+            return
+          }
+          void act(() => mutate(pitch, { action: "remove" }))
+        }}
+      >
+        {pitch.locked
+          ? "Locked in live poll"
+          : confirmRemove
+            ? removeRefunds
+              ? "Tap again to remove and refund"
+              : "Tap again to remove"
+            : removeRefunds
+              ? "Remove and refund"
+              : "Remove from queue"}
+      </Button>
+    )
 
   if (terminal) {
     const summary =
       pitch.publicLabel || pitch.challenge || pitch.rawText || "Mission"
     return (
-      <Card size="sm" className="gap-0 border-border/70 py-3 shadow-none">
+      <Card size="sm" className="gap-3 border-border/70 py-3 shadow-none">
         <CardHeader className="[grid-template-columns:minmax(0,1fr)_auto] gap-0 px-4">
           <CardTitle className="truncate pr-2 text-base">{summary}</CardTitle>
           <CardDescription className="truncate text-xs">
@@ -209,6 +242,7 @@ function PitchCard({
             <StatusBadge pitch={pitch} />
           </CardAction>
         </CardHeader>
+        <CardFooter className="px-4">{removeButton}</CardFooter>
       </Card>
     )
   }
@@ -216,7 +250,7 @@ function PitchCard({
   return (
     <Card className="border-border/80">
       <CardHeader>
-        <CardTitle className="pr-2 text-lg">
+        <CardTitle className="pr-2 text-xl">
           {pitch.viewerName}&apos;s pitch
         </CardTitle>
         <CardDescription>
@@ -283,12 +317,12 @@ function PitchCard({
             id={`raw-${pitch.redemptionId}`}
             value={rawText}
             disabled={busy || pitch.locked || processing || !rawEditable}
-            className="min-h-24 text-base"
+            className="min-h-28 text-base"
             onChange={(event) => setRawText(event.target.value)}
           />
           {rawEditable && rawText.trim() !== pitch.rawText && (
             <Button
-              className="min-h-12 w-full text-base sm:w-fit"
+              className="min-h-14 w-full text-base md:w-fit"
               variant="outline"
               disabled={busy || !rawText.trim()}
               onClick={() =>
@@ -301,10 +335,10 @@ function PitchCard({
         </div>
 
         {(reviewed || pitch.revivable) && (
-          <label className="flex min-h-12 cursor-pointer items-center gap-3 text-base">
+          <label className="flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-3 text-base">
             <input
               type="checkbox"
-              className="size-5 accent-primary"
+              className="size-6 shrink-0 accent-primary"
               checked={pitch.anywhere}
               disabled={
                 busy || pitch.locked || (pitch.anywhere && !pitch.noTravel)
@@ -409,7 +443,7 @@ function PitchCard({
                   value={publicLabel}
                   maxLength={25}
                   disabled={busy || pitch.locked}
-                  className="min-h-20 text-base"
+                  className="min-h-24 text-base"
                   onChange={(event) => setPublicLabel(event.target.value)}
                 />
               </div>
@@ -424,7 +458,7 @@ function PitchCard({
                   max={120}
                   value={duration}
                   disabled={busy || pitch.locked}
-                  className="min-h-12 text-base"
+                  className="min-h-14 text-base"
                   onChange={(event) => setDuration(event.target.value)}
                 />
               </div>
@@ -439,7 +473,7 @@ function PitchCard({
                 maxLength={80}
                 disabled={busy || pitch.locked}
                 placeholder="A safe, playful consequence"
-                className="min-h-20 text-base"
+                className="min-h-24 text-base"
                 onChange={(event) => setFailConsequence(event.target.value)}
               />
               <p className="text-xs text-muted-foreground">
@@ -466,10 +500,10 @@ function PitchCard({
         )}
       </CardContent>
 
-      <CardFooter className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+      <CardFooter className="grid grid-cols-1 gap-3 md:flex md:flex-row md:flex-wrap">
         {processing && (
           <Button
-            className="min-h-12 w-full text-base sm:w-auto"
+            className="min-h-14 w-full text-base md:w-auto"
             disabled={busy || pitch.locked}
             onClick={() =>
               void act(async () => {
@@ -487,7 +521,7 @@ function PitchCard({
           <>
             {pitch.reviewStatus === "approved" && (
               <Button
-                className="min-h-12 w-full text-base sm:w-auto"
+                className="min-h-14 w-full text-base md:w-auto"
                 variant={selected ? "secondary" : "outline"}
                 disabled={busy || pitch.locked}
                 onClick={() => toggleSelected(pitch)}
@@ -497,7 +531,7 @@ function PitchCard({
             )}
             {pitch.reviewStatus === "approved" && (
               <Button
-                className="min-h-12 w-full text-base sm:w-auto"
+                className="min-h-14 w-full text-base md:w-auto"
                 disabled={busy || !canPick}
                 onClick={() => void act(() => pick(pitch))}
               >
@@ -505,7 +539,7 @@ function PitchCard({
               </Button>
             )}
             <Button
-              className="min-h-12 w-full text-base sm:w-auto"
+              className="min-h-14 w-full text-base md:w-auto"
               variant="outline"
               disabled={busy || pitch.locked || !publicLabel.trim()}
               onClick={() => void act(() => mutate(pitch, detailsCommand()))}
@@ -514,7 +548,7 @@ function PitchCard({
             </Button>
             {pitch.reviewStatus !== "approved" && (
               <Button
-                className="min-h-12 w-full text-base sm:w-auto"
+                className="min-h-14 w-full text-base md:w-auto"
                 disabled={busy || pitch.locked || !publicLabel.trim()}
                 onClick={() =>
                   void act(async () => {
@@ -526,17 +560,18 @@ function PitchCard({
                 Approve
               </Button>
             )}
-            <Button
-              className="min-h-12 w-full text-base sm:w-auto"
-              variant="destructive"
-              disabled={busy || pitch.locked}
-              onClick={() =>
-                void act(() => mutate(pitch, { action: "reject" }))
-              }
-            >
-              Reject and refund
-            </Button>
           </>
+        )}
+        {removeButton}
+        {confirmRemove && !pitch.locked && (
+          <Button
+            className="min-h-14 w-full text-base md:w-auto"
+            variant="outline"
+            disabled={busy}
+            onClick={() => setConfirmRemove(false)}
+          >
+            Keep pitch
+          </Button>
         )}
       </CardFooter>
     </Card>
@@ -898,7 +933,7 @@ export function PitchQueue() {
     pollDurationSeconds <= 1800
 
   return (
-    <section aria-labelledby="queue-heading" className="space-y-4">
+    <section aria-labelledby="queue-heading" className="flex flex-col gap-4">
       {warningToast && (
         <div
           role="status"
@@ -907,7 +942,7 @@ export function PitchQueue() {
           {warningToast}
         </div>
       )}
-      <div className="flex items-center justify-between gap-4">
+      <div className="order-0 grid grid-cols-[1fr_auto] items-center gap-4">
         <div>
           <p className="text-sm font-medium text-muted-foreground">
             Producer console
@@ -921,7 +956,7 @@ export function PitchQueue() {
         </div>
         <Button
           variant="outline"
-          className="min-h-12"
+          className="min-h-14 min-w-24 text-base"
           disabled={!signedIn || loading}
           onClick={() => void refresh()}
         >
@@ -929,10 +964,10 @@ export function PitchQueue() {
         </Button>
       </div>
       {signedIn && (
-        <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
+        <label className="order-4 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
           <input
             type="checkbox"
-            className="size-5 accent-primary"
+            className="size-6 shrink-0 accent-primary"
             checked={noTravelMode}
             disabled={modeBusy}
             onChange={(event) => void toggleNoTravelMode(event.target.checked)}
@@ -948,10 +983,10 @@ export function PitchQueue() {
         </label>
       )}
       {signedIn && (
-        <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
+        <label className="order-4 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
           <input
             type="checkbox"
-            className="size-5 accent-primary"
+            className="size-6 shrink-0 accent-primary"
             checked={mapCoarseMode}
             disabled={modeBusy}
             onChange={(event) => void toggleMapCoarseMode(event.target.checked)}
@@ -966,15 +1001,17 @@ export function PitchQueue() {
         </label>
       )}
       {signedIn && process.env.NEXT_PUBLIC_APP_MODE === "emulator" && (
-        <DevPanel
-          poll={poll}
-          mission={mission}
-          token={token}
-          refresh={refresh}
-        />
+        <div className="order-5">
+          <DevPanel
+            poll={poll}
+            mission={mission}
+            token={token}
+            refresh={refresh}
+          />
+        </div>
       )}
       {signedIn && (
-        <Card className="border-destructive/40">
+        <Card className="order-6 border-destructive/40">
           <CardHeader>
             <CardTitle className="text-lg">End stream</CardTitle>
             <CardDescription>
@@ -1016,10 +1053,12 @@ export function PitchQueue() {
         </Card>
       )}
       {signedIn && mission && (
-        <MissionCard mission={mission} onAction={missionAction} />
+        <div className="order-1">
+          <MissionCard mission={mission} onAction={missionAction} />
+        </div>
       )}
       {signedIn && (
-        <Card>
+        <Card className="order-2">
           <CardHeader>
             <CardTitle className="text-lg">
               {poll?.status === "active"
@@ -1040,20 +1079,22 @@ export function PitchQueue() {
           </CardHeader>
           <CardContent className="gap-3">
             {pollInProgress ? (
-              <ol className="list-decimal space-y-1 pl-5 text-sm">
+              <ol className="grid list-none gap-3 p-0 text-base">
                 {poll.choices.map((choice) => (
-                  <li key={choice.redemptionId}>
-                    {choice.title}
+                  <li
+                    key={choice.redemptionId}
+                    className="rounded-lg border bg-muted/40 p-3"
+                  >
+                    <div className="flex min-h-10 items-center justify-between gap-3">
+                      <span className="font-medium">{choice.title}</span>
+                      <Badge variant="outline">{choice.votes ?? 0} votes</Badge>
+                    </div>
                     {tied.length > 0 && (
-                      <span className="text-muted-foreground">
-                        {" "}
-                        ({choice.votes ?? 0} votes)
-                      </span>
+                      <span className="sr-only">Tied choice</span>
                     )}
                     {tied.includes(choice.redemptionId) && (
                       <Button
-                        className="ml-3 min-h-10"
-                        size="sm"
+                        className="mt-2 min-h-14 w-full text-base"
                         disabled={pollBusy}
                         onClick={() =>
                           void pollAction("/api/polls/tiebreak", {
@@ -1061,16 +1102,22 @@ export function PitchQueue() {
                           })
                         }
                       >
-                        Pick this one
+                        Pick this mission
                       </Button>
                     )}
                   </li>
                 ))}
               </ol>
             ) : selectedPitches.length ? (
-              <ol className="list-decimal space-y-1 pl-5 text-sm">
-                {selectedPitches.map((pitch) => (
-                  <li key={pitch.redemptionId}>{pitch.publicLabel}</li>
+              <ol className="grid list-none gap-2 p-0 text-base">
+                {selectedPitches.map((pitch, index) => (
+                  <li
+                    key={pitch.redemptionId}
+                    className="flex min-h-12 items-center gap-3 rounded-lg border p-3"
+                  >
+                    <Badge variant="outline">{index + 1}</Badge>
+                    <span className="font-medium">{pitch.publicLabel}</span>
+                  </li>
                 ))}
               </ol>
             ) : (
@@ -1079,7 +1126,7 @@ export function PitchQueue() {
               </p>
             )}
             {!pollInProgress && (
-              <div className="grid max-w-52 gap-2">
+              <div className="grid w-full gap-2 sm:max-w-64">
                 <Label htmlFor="poll-duration">Poll length (seconds)</Label>
                 <Input
                   id="poll-duration"
@@ -1090,7 +1137,7 @@ export function PitchQueue() {
                   value={pollDuration}
                   disabled={pollBusy || !!missionInProgress}
                   aria-invalid={!pollDurationValid}
-                  className="min-h-12 text-base"
+                  className="min-h-14 text-lg"
                   onChange={(event) => setPollDuration(event.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
@@ -1117,7 +1164,7 @@ export function PitchQueue() {
             {poll?.status === "creating" ||
             poll?.status === "create_unknown" ? (
               <Button
-                className="min-h-12 w-full text-base sm:w-auto"
+                className="min-h-14 w-full text-base md:w-auto"
                 disabled={pollBusy}
                 onClick={() => void pollAction("/api/polls/reconcile")}
               >
@@ -1125,7 +1172,7 @@ export function PitchQueue() {
               </Button>
             ) : poll?.status === "active" ? (
               <Button
-                className="min-h-12 w-full text-base sm:w-auto"
+                className="min-h-14 w-full text-base md:w-auto"
                 variant="destructive"
                 disabled={pollBusy}
                 onClick={() => void pollAction("/api/polls/end")}
@@ -1134,7 +1181,7 @@ export function PitchQueue() {
               </Button>
             ) : tied.length ? null : (
               <Button
-                className="min-h-12 w-full text-base sm:w-auto"
+                className="min-h-14 w-full text-base md:w-auto"
                 disabled={
                   pollBusy ||
                   !!missionInProgress ||
@@ -1158,11 +1205,11 @@ export function PitchQueue() {
         </Card>
       )}
       {message && (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="order-3 text-base text-muted-foreground">
           {message}
         </p>
       )}
-      <div className="grid gap-4">
+      <div className="order-3 grid gap-4">
         {pitches.map((pitch) => (
           <PitchCard
             key={pitch.redemptionId}
