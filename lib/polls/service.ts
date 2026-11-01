@@ -15,6 +15,7 @@ import {
 import { createTwitchPollProvider } from "@/shared/providers/twitch-polls"
 import { loadAuthDependencies } from "@/lib/auth/server"
 import { getServerFirebase } from "@/lib/firebase/admin"
+import type { PendingPollEnd } from "@/shared/eventsub"
 import { createPollEndStore } from "@/lib/polls/end-store"
 import { createPollStore } from "@/lib/polls/store"
 
@@ -106,6 +107,14 @@ export async function reconcilePoll(deps: PollServiceDependencies) {
   }
 }
 
+const ENDED_STATUSES: PendingPollEnd["status"][] = [
+  "completed",
+  "terminated",
+  "archived",
+  "moderated",
+  "invalid",
+]
+
 export async function endLivePoll(tenantId: string) {
   const deps = await liveDependencies(tenantId)
   const record = await deps.store.read()
@@ -117,7 +126,18 @@ export async function endLivePoll(tenantId: string) {
     ended = await deps.provider.end(record.twitchPollId)
   } catch (error) {
     if (!(error instanceof PollProviderError)) throw error
-    throw new PollError(error.code, error.status)
+    // Twitch refuses to end a poll that already ended (e.g. its poll.end
+    // event was missed). Read its final result instead so state can resync.
+    const recent = await deps.provider.listRecent().catch(() => [])
+    const found = recent.find((poll) => poll.id === record.twitchPollId)
+    if (!found || found.status === "ACTIVE") {
+      throw new PollError(error.code, error.status)
+    }
+    ended = found
+  }
+  const status = ended.status.toLowerCase()
+  if (!ENDED_STATUSES.includes(status as PendingPollEnd["status"])) {
+    throw new PollError("poll_still_active", 503)
   }
   const now = deps.now()
   const endStore = createPollEndStore(getServerFirebase().db, tenantId)
@@ -126,7 +146,7 @@ export async function endLivePoll(tenantId: string) {
     sourceMessageId: "owner_end",
     broadcasterId: tenantId,
     title: ended.title,
-    status: "terminated",
+    status: status as PendingPollEnd["status"],
     choices: ended.choices,
     startedAt: new Date(ended.startedAt).toISOString(),
     endedAt: new Date(ended.endedAt ?? now).toISOString(),
@@ -134,7 +154,9 @@ export async function endLivePoll(tenantId: string) {
     createdAt: now,
     updatedAt: now,
   })
-  await endStore.apply(ended.id, now)
+  if ((await endStore.apply(ended.id, now)) === "error") {
+    throw new PollError("poll_end_failed", 500)
+  }
   return { poll: await deps.store.read() }
 }
 

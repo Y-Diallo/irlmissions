@@ -156,7 +156,11 @@ describe("public overlay projection", () => {
       state: "heading",
       updatedAt: now,
       objective: "Mystery food challenge",
+      chosenBy: "Chat",
     })
+    expect(
+      missionOverlay({ ...mission, viewerName: "CoolViewer" })
+    ).toMatchObject({ chosenBy: "CoolViewer" })
     expect(JSON.stringify(projection)).not.toContain("Sample Cafe")
     expect(JSON.stringify(projection)).not.toContain("37.78")
   })

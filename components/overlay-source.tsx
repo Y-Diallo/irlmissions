@@ -142,7 +142,7 @@ function Card({
         )}
         {heading && (
           <p className="show-status">
-            Destination locked. Make your way there.
+            {overlay.chosenBy} chose this.
           </p>
         )}
         {overlay.state === "arrived" && (

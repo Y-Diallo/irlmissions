@@ -38,7 +38,12 @@ describe("overlay read route", () => {
     )
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
-      overlay: { state: "heading", updatedAt: 1, objective: "Go" },
+      overlay: {
+        state: "heading",
+        updatedAt: 1,
+        objective: "Go",
+        chosenBy: "Chat",
+      },
     })
     expect(response.headers.get("cache-control")).toBe("no-store")
   })

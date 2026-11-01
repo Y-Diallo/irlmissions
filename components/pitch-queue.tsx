@@ -44,6 +44,9 @@ const errors: Record<string, string> = {
   poll_not_tied: "That poll is no longer tied. Refresh to see the result.",
   not_a_tied_choice: "Pick one of the tied choices.",
   poll_not_active: "That poll already ended. Refresh to see the result.",
+  poll_still_active: "Twitch still shows the poll as live. Try again.",
+  poll_end_failed:
+    "Twitch's result couldn't be applied. Use Pick on a pitch instead.",
   pitch_not_pickable: "Only approved pitches that aren't in a poll can be picked.",
   mission_not_arrived:
     "Mark the destination as arrived before choosing an outcome.",

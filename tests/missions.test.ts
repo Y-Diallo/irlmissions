@@ -71,6 +71,13 @@ describe("mission state", () => {
       durationMinutes: 10,
       destination: { name: "Sample Cafe" },
     })
+    expect(
+      createMissionFromWinner(
+        poll,
+        { ...pitch, viewer: { id: "1", login: "cool", name: "CoolViewer" } },
+        now
+      ).viewerName
+    ).toBe("CoolViewer")
     expect(() =>
       createMissionFromWinner(poll, { ...pitch, lockedBy: "other" }, now)
     ).toThrow("winner_not_available")
@@ -123,10 +130,29 @@ describe("mission state", () => {
     expect(drive.appleMaps).toContain("dirflg=d")
   })
 
-  it("accepts only the three owner actions", () => {
+  it("adds five minutes to the duration, running timer, or elapsed timer", () => {
+    expect(
+      transitionMission(mission(), "extend", now + 500).durationMinutes
+    ).toBe(15)
+    const arrived = transitionMission(mission(), "arrive", now + 1000)
+    expect(
+      transitionMission(arrived, "extend", now + 2000).timerEndsAt
+    ).toBe(now + 901_000)
+    // Past the end, the extra five minutes count from now.
+    expect(
+      transitionMission(arrived, "extend", now + 700_000).timerEndsAt
+    ).toBe(now + 1_000_000)
+    const complete = transitionMission(arrived, "complete", now + 2000)
+    expect(() => transitionMission(complete, "extend", now + 3000)).toThrow(
+      "mission_finished"
+    )
+  })
+
+  it("accepts only the four owner actions", () => {
     expect(parseMissionAction({ action: "arrive" })).toBe("arrive")
     expect(parseMissionAction({ action: "complete" })).toBe("complete")
     expect(parseMissionAction({ action: "fail" })).toBe("fail")
+    expect(parseMissionAction({ action: "extend" })).toBe("extend")
     expect(() => parseMissionAction({ action: "cancel" })).toThrow(
       "invalid_mission_action"
     )

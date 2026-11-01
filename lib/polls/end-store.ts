@@ -158,14 +158,21 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
       })
     },
 
-    // Records the result Twitch returned when the owner ended the poll early.
-    // The matching EventSub poll.end later dedupes against this document.
+    // Records the result Twitch returned when the owner ended (or resynced)
+    // the poll. The matching EventSub poll.end later dedupes against this
+    // document. The caller only gets here while the session poll is still
+    // active, so an earlier event that errored or was skipped never took
+    // effect and is safe to replace with Twitch's current result.
     recordEarlyEnd(event: PendingPollEnd) {
       return db.runTransaction(async (tx) => {
         const eventRef = db.doc(
           tenantDoc(tenantId, `pollEvents/${eventSubStorageId(event.pollId)}`)
         )
-        if (!(await tx.get(eventRef)).exists) tx.create(eventRef, event)
+        const existing = await tx.get(eventRef)
+        if (!existing.exists) tx.create(eventRef, event)
+        else if (existing.data()?.processing?.status !== "pending") {
+          tx.set(eventRef, event)
+        }
       })
     },
 

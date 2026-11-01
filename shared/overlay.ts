@@ -20,6 +20,8 @@ export type OverlayProjection =
       state: "heading"
       updatedAt: number
       objective: string
+      /** Display name of the viewer who pitched it; "Chat" when unknown. */
+      chosenBy: string
     }
   | ({
       state: "arrived"
@@ -115,6 +117,7 @@ export function missionOverlay(mission: MissionRecord): OverlayProjection {
       state: "heading",
       updatedAt: mission.updatedAt,
       objective: mission.publicLabel,
+      chosenBy: mission.viewerName ?? "Chat",
     }
   }
   if (mission.status === "arrived") {
@@ -222,7 +225,13 @@ export function toOverlayView(value: unknown): OverlayProjection {
     }
   }
   if (input.state === "heading") {
-    return { state: "heading", updatedAt, objective }
+    return {
+      state: "heading",
+      updatedAt,
+      objective,
+      chosenBy:
+        input.chosenBy === undefined ? "Chat" : text(input.chosenBy, 25),
+    }
   }
   return { state: input.state, updatedAt, objective, ...place }
 }

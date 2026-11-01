@@ -9,6 +9,8 @@ export type MissionRecord = {
   /** Twitch poll ID, or "" when the owner picked the pitch directly. */
   pollId: string
   redemptionId: string
+  /** Twitch display name of the viewer who pitched it, shown on the overlay. */
+  viewerName?: string
   status: MissionStatus
   publicLabel: string
   durationMinutes: number
@@ -30,9 +32,12 @@ export type MissionPitch = {
   destination?: unknown
   walkingRoute?: unknown
   lockedBy?: unknown
+  viewer?: unknown
 }
 
-export type MissionAction = "arrive" | "complete" | "fail"
+export type MissionAction = "arrive" | "complete" | "fail" | "extend"
+
+export const EXTEND_MS = 5 * 60_000
 
 export type MissionOwnerView = MissionRecord & {
   navigation: {
@@ -168,11 +173,15 @@ function missionFromPitch(
   ) {
     throw new MissionError("invalid_mission_details", 500)
   }
+  const viewerName = object(pitch.viewer)?.name
   return {
     missionId,
     lockId: `mission:${missionId}`,
     pollId,
     redemptionId: pitch.redemptionId,
+    ...(typeof viewerName === "string" && viewerName.trim()
+      ? { viewerName: viewerName.trim().slice(0, 25) }
+      : {}),
     status: "heading",
     publicLabel,
     durationMinutes: durationMinutes as number,
@@ -188,7 +197,12 @@ export function parseMissionAction(value: unknown): MissionAction {
     throw new MissionError("invalid_mission_action", 400)
   }
   const action = (value as Record<string, unknown>).action
-  if (action !== "arrive" && action !== "complete" && action !== "fail") {
+  if (
+    action !== "arrive" &&
+    action !== "complete" &&
+    action !== "fail" &&
+    action !== "extend"
+  ) {
     throw new MissionError("invalid_mission_action", 400)
   }
   return action
@@ -207,6 +221,24 @@ export function transitionMission(
       status: "arrived",
       arrivedAt: now,
       timerEndsAt: now + record.durationMinutes * 60_000,
+      updatedAt: now,
+    }
+  }
+  if (action === "extend") {
+    if (record.status === "heading") {
+      return {
+        ...record,
+        durationMinutes: record.durationMinutes + EXTEND_MS / 60_000,
+        updatedAt: now,
+      }
+    }
+    if (record.status !== "arrived" || !record.timerEndsAt) {
+      throw new MissionError("mission_finished")
+    }
+    // An elapsed timer restarts from now rather than from the past end time.
+    return {
+      ...record,
+      timerEndsAt: Math.max(record.timerEndsAt, now) + EXTEND_MS,
       updatedAt: now,
     }
   }
