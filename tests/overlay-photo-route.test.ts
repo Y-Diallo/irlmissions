@@ -35,6 +35,7 @@ describe("overlay place photo route", () => {
     mocks.readRevealedPlaceId.mockResolvedValue("place-1")
     mocks.getGooglePlacePhoto.mockResolvedValue({
       photoUri: "https://lh3.googleusercontent.com/photo",
+      googleMapsUri: "https://maps.google.com/?cid=photo",
       authorAttributions: [
         {
           displayName: "Demo Photographer",
@@ -53,6 +54,7 @@ describe("overlay place photo route", () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
       photoUri: "https://lh3.googleusercontent.com/photo",
+      googleMapsUri: "https://maps.google.com/?cid=photo",
       authorAttributions: [
         {
           displayName: "Demo Photographer",

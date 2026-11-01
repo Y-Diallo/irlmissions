@@ -95,6 +95,7 @@ describe("Google Maps providers", () => {
               name: "places/place-1/photos/photo-1",
               widthPx: 1600,
               heightPx: 900,
+              googleMapsUri: "https://maps.google.com/?cid=photo-1",
               authorAttributions: [
                 {
                   displayName: "Demo Photographer",
@@ -115,6 +116,7 @@ describe("Google Maps providers", () => {
       getGooglePlacePhoto({ apiKey: "google-secret" }, "place-1", fetchMock)
     ).resolves.toEqual({
       photoUri: "https://lh3.googleusercontent.com/place-photo",
+      googleMapsUri: "https://maps.google.com/?cid=photo-1",
       authorAttributions: [
         {
           displayName: "Demo Photographer",
@@ -137,6 +139,33 @@ describe("Google Maps providers", () => {
     expect(String(photoUrl)).not.toContain("google-secret")
     expect(photoInit?.headers).toEqual({
       "X-Goog-Api-Key": "google-secret",
+    })
+  })
+
+  it("uses distance-ranked Nearby Search for a generic park", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({ places: [] })
+    )
+    await createGooglePlacesProvider(
+      { apiKey: "google-secret" },
+      fetchMock
+    ).search({
+      query: "a park",
+      origin: { latitude: 37.77, longitude: -122.42 },
+      radiusMeters: 5000,
+    })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("https://places.googleapis.com/v1/places:searchNearby")
+    expect(JSON.parse(String(init?.body))).toEqual({
+      includedTypes: ["park"],
+      maxResultCount: 10,
+      rankPreference: "DISTANCE",
+      locationRestriction: {
+        circle: {
+          center: { latitude: 37.77, longitude: -122.42 },
+          radius: 5000,
+        },
+      },
     })
   })
 

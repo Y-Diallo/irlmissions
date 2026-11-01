@@ -322,7 +322,6 @@ function eligiblePlaces(
     })
     .filter(
       ({ candidate, fromOrigin, fromBase }) =>
-        candidate.publicAccess &&
         candidate.businessStatus !== "closed_permanently" &&
         fromOrigin <= context.searchRadiusMeters &&
         fromBase > context.baseZone.radiusMeters

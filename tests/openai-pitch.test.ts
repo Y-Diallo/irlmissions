@@ -58,7 +58,7 @@ describe("OpenAI pitch extractor", () => {
       "set anywhere=true unless the viewer explicitly names a place"
     )
     expect(request.instructions).toContain(
-      "If none was provided, generate a short, harmless, playful consequence"
+      "If the viewer did not provide a consequence, return an empty string"
     )
     expect(request.tools).toBeUndefined()
   })
@@ -98,6 +98,27 @@ describe("OpenAI pitch extractor", () => {
         failed
       ).extract("pitch")
     ).rejects.toThrow("OpenAI extraction failed")
+  })
+
+  it("preserves an explicit if-you-lose consequence the model omitted", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      response({
+        ...extraction,
+        publicLabelSuggestion: "Taco Bell tic-tac-toe",
+        failConsequence: "",
+      })
+    )
+    await expect(
+      createOpenAIPitchExtractor(
+        { apiKey: "secret", model: "gpt-6-luna" },
+        fetchMock
+      ).extract(
+        "Go to Taco Bell and play tic-tac-toe; if you lose no swearing for 10 minutes"
+      )
+    ).resolves.toMatchObject({
+      publicLabelSuggestion: "Taco Bell tic-tac-toe",
+      failConsequence: "no swearing for 10 minutes",
+    })
   })
 
   it("uses the current efficient default and permits an explicit override", () => {

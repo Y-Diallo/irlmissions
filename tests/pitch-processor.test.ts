@@ -188,7 +188,7 @@ describe("pitch processor", () => {
     expect(state.rejected).toBe("no_public_place")
   })
 
-  it("excludes the base zone and selects the closest remaining place", async () => {
+  it("excludes the base zone but does not gate Google results by publicAccess", async () => {
     const state = fixture()
     state.context.baseZone = {
       latitude: 37.775,
@@ -214,7 +214,7 @@ describe("pitch processor", () => {
         address: "Park Street",
         latitude: 37.78,
         longitude: -122.41,
-        publicAccess: true,
+        publicAccess: false,
         businessStatus: "operational" as const,
         hoursText: null,
         googleMapsUri: "https://maps.google.com/?cid=eligible",

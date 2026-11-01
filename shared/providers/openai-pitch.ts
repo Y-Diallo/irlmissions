@@ -45,7 +45,7 @@ const schema = {
     placeQuery: {
       type: "string",
       description:
-        "A concise search query for the real public business, attraction, park, neighborhood, district, or city explicitly requested by the viewer. Never infer a neighborhood, business, or destination that was not requested. Empty string when anywhere is true.",
+        "Only the concise destination phrase explicitly requested by the viewer, with no challenge or consequence text. Examples: \"park\", \"Pike Place Market\", \"coffee shop\". Never infer a neighborhood, business, or destination that was not requested. Empty string when anywhere is true.",
     },
     challenge: {
       type: "string",
@@ -53,14 +53,16 @@ const schema = {
     },
     publicLabelSuggestion: {
       type: "string",
+      minLength: 1,
+      maxLength: 25,
       description:
-        "A Twitch poll choice of at most 25 characters that restates what the viewer asked, in their words. Keep the activity and kind of place. Well-known chains with many locations (e.g. Spirit Halloween, Walmart) may be named; omit the names of local one-off businesses, street addresses, and neighborhoods.",
+        "A complete Twitch poll choice of at most 25 characters. Remove filler such as go to, challenge a stranger, and conjunctions; keep the destination category or safe chain name plus the core activity. Example: \"Taco Bell tic-tac-toe\". Never end with a dangling word such as and, at, to, or with. Omit exact addresses and local destination names.",
     },
     durationMinutes: { type: "integer", minimum: 1, maximum: 120 },
     failConsequence: {
       type: "string",
       description:
-        "The viewer-provided penalty for failing, restated in at most 80 characters. Preserve it even when it needs a risk flag so the owner can decide. If none was provided, generate a harmless, playful consequence appropriate to the challenge. Never invent an illegal, dangerous, harassing, humiliating, destructive, or costly consequence.",
+        "The viewer-provided penalty for failing or losing, restated in at most 80 characters. Phrases such as if you lose, if you fail, or if time runs out introduce the consequence. Preserve it even when it needs a risk flag so the owner can decide. Return an empty string when the viewer did not explicitly provide one. Never invent a consequence.",
     },
     riskFlags: {
       type: "array",
@@ -107,6 +109,14 @@ function outputText(payload: unknown) {
   return texts[0]
 }
 
+function statedFailConsequence(input: string) {
+  const match =
+    /\bif\s+(?:you|i|the streamer)\s+(?:fail|fails|failed|lose|loses|lost)\b\s*[:,]?\s*(.+)$/i.exec(
+      input
+    )
+  return match?.[1]?.trim() ?? ""
+}
+
 export function createOpenAIPitchExtractor(
   config: OpenAIPitchConfig,
   fetchImpl: Fetch = fetch
@@ -129,7 +139,7 @@ export function createOpenAIPitchExtractor(
               store: false,
               max_output_tokens: 600,
               instructions:
-                "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. A verb like go, walk, run, explore, or trick-or-treat is not a destination: set anywhere=true unless the viewer explicitly names a place or requests a kind of place. Named public businesses, attractions, markets, parks, neighborhoods, districts, and cities are valid destinations. Flag dangerous, illegal, harassing, coercive, or otherwise concerning activity for human review, including any requested failure consequence. Preserve a viewer-provided consequence and flag it when concerning so the owner can decide. If none was provided, generate a short, harmless, playful consequence; never generate one that is costly, destructive, humiliating, dangerous, illegal, or harassing. The public label is a poll choice of at most 25 characters that plainly restates the viewer's request. Do not make it vague or mysterious. Big chain names are fine because they don't reveal which location; leave out exact addresses and local destination names before arrival.",
+                "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. A verb like go, walk, run, explore, or trick-or-treat is not a destination: set anywhere=true unless the viewer explicitly names a place or requests a kind of place. Named public businesses, attractions, markets, parks, neighborhoods, districts, and cities are valid destinations. Flag dangerous, illegal, harassing, coercive, or otherwise concerning activity for human review, including any requested failure consequence. Preserve an explicitly viewer-provided consequence and flag it when concerning so the owner can decide. If the viewer did not provide a consequence, return an empty string; never invent one. The public label is a poll choice of at most 25 characters that plainly restates the viewer's request. Do not make it vague or mysterious. Big chain names are fine because they don't reveal which location; leave out exact addresses and local destination names before arrival.",
               input: text,
               text: {
                 format: {
@@ -147,7 +157,11 @@ export function createOpenAIPitchExtractor(
         const parsed = JSON.parse(
           outputText(await response.json())
         ) as PitchExtraction
-        return validateExtraction(parsed)
+        return validateExtraction({
+          ...parsed,
+          failConsequence:
+            parsed.failConsequence?.trim() || statedFailConsequence(text),
+        })
       } catch (error) {
         if (error instanceof Error && error.message.startsWith("OpenAI")) {
           throw error

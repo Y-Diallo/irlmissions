@@ -36,7 +36,11 @@ function Card({
 }: {
   overlay: OverlayProjection
   now: number
-  photo: { uri: string; attributions: PhotoAttribution[] }
+  photo: {
+    uri: string
+    attributions: PhotoAttribution[]
+    googleMapsUri?: string
+  }
 }) {
   if (overlay.state === "idle") {
     return (
@@ -112,32 +116,45 @@ function Card({
             backgroundImage: `url(${JSON.stringify(photo.uri).slice(1, -1)})`,
           }}
         >
-          {photo.attributions.length > 0 && (
-            <p className="show-photo-credit">
-              Photo: {" "}
-              {photo.attributions.map((attribution, index) => (
-                <span key={`${attribution.displayName}-${index}`}>
-                  {index > 0 ? ", " : ""}
-                  {attribution.photoUri && (
-                    <i
-                      aria-hidden="true"
-                      className="show-photo-author"
-                      style={{
-                        backgroundImage: `url(${JSON.stringify(attribution.photoUri).slice(1, -1)})`,
-                      }}
-                    />
-                  )}
-                  {attribution.uri ? (
-                    <a href={attribution.uri} rel="noreferrer">
-                      {attribution.displayName}
-                    </a>
-                  ) : (
-                    attribution.displayName
-                  )}
-                </span>
-              ))}
-            </p>
-          )}
+          <p className="show-photo-credit">
+            {photo.attributions.length > 0 && (
+              <span className="show-photo-byline">
+                Photo: {" "}
+                {photo.attributions.map((attribution, index) => (
+                  <span key={`${attribution.displayName}-${index}`}>
+                    {index > 0 ? ", " : ""}
+                    {attribution.photoUri && (
+                      <i
+                        aria-hidden="true"
+                        className="show-photo-author"
+                        style={{
+                          backgroundImage: `url(${JSON.stringify(attribution.photoUri).slice(1, -1)})`,
+                        }}
+                      />
+                    )}
+                    {attribution.uri ? (
+                      <a href={attribution.uri} rel="noreferrer">
+                        {attribution.displayName}
+                      </a>
+                    ) : (
+                      attribution.displayName
+                    )}
+                  </span>
+                ))}
+              </span>
+            )}
+            {photo.googleMapsUri ? (
+              <a
+                className="show-google-maps-badge"
+                href={photo.googleMapsUri}
+                rel="noreferrer"
+              >
+                Google Maps
+              </a>
+            ) : (
+              <span className="show-google-maps-badge">Google Maps</span>
+            )}
+          </p>
         </div>
       )}
       <div className="show-card-content">
@@ -202,6 +219,7 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
     version: number
     uri: string
     attributions: PhotoAttribution[]
+    googleMapsUri?: string
   }>({ version: 0, uri: "", attributions: [] })
   const [now, setNow] = useState(0)
   const photoVersion =
@@ -283,6 +301,9 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
             version: photoVersion,
             uri: body.photoUri,
             attributions,
+            ...(typeof body.googleMapsUri === "string"
+              ? { googleMapsUri: body.googleMapsUri }
+              : {}),
           })
         }
       } catch {

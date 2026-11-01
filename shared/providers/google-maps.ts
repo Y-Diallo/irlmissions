@@ -108,6 +108,7 @@ function parsePhoto(value: unknown) {
   if (!Array.isArray(value)) return undefined
   const photo = object(value[0])
   const name = string(photo?.name)
+  const googleMapsUri = httpsUrl(photo?.googleMapsUri)
   const widthPx = photo?.widthPx
   const heightPx = photo?.heightPx
   if (
@@ -124,6 +125,7 @@ function parsePhoto(value: unknown) {
     name,
     widthPx: widthPx as number,
     heightPx: heightPx as number,
+    ...(googleMapsUri ? { googleMapsUri } : {}),
     authorAttributions: parsePhotoAttributions(photo?.authorAttributions),
   }
 }
@@ -223,6 +225,7 @@ export async function getGooglePlacePhoto(
   if (!photo) throw new Error("Google Place photo unavailable")
   return {
     photoUri: await getGooglePlacePhotoUri(config, photo.name, fetchImpl),
+    ...(photo.googleMapsUri ? { googleMapsUri: photo.googleMapsUri } : {}),
     authorAttributions: photo.authorAttributions,
   }
 }
@@ -294,24 +297,41 @@ export function createGooglePlacesProvider(
       origin: Coordinates
       radiusMeters: number
     }): Promise<PlaceCandidate[]> {
+      const genericPark = /^(?:a |an |public |nearby )?parks?$/i.test(
+        input.query.trim()
+      )
       const payload = object(
         await googleRequest(
-          "https://places.googleapis.com/v1/places:searchText",
+          genericPark
+            ? "https://places.googleapis.com/v1/places:searchNearby"
+            : "https://places.googleapis.com/v1/places:searchText",
           config,
-          {
-            textQuery: input.query,
-            pageSize: 10,
-            includePureServiceAreaBusinesses: false,
-            // Text Search supports circles only for locationBias. The pitch
-            // processor applies the exact radius and base-zone restrictions
-            // to every returned coordinate before selecting a destination.
-            locationBias: {
-              circle: {
-                center: latLng(input.origin),
-                radius: input.radiusMeters,
+          genericPark
+            ? {
+                includedTypes: ["park"],
+                maxResultCount: 10,
+                rankPreference: "DISTANCE",
+                locationRestriction: {
+                  circle: {
+                    center: latLng(input.origin),
+                    radius: input.radiusMeters,
+                  },
+                },
+              }
+            : {
+                textQuery: input.query,
+                pageSize: 10,
+                includePureServiceAreaBusinesses: false,
+                // Text Search supports circles only for locationBias. The
+                // processor applies the exact radius and base-zone restrictions
+                // to every returned coordinate before selecting a destination.
+                locationBias: {
+                  circle: {
+                    center: latLng(input.origin),
+                    radius: input.radiusMeters,
+                  },
+                },
               },
-            },
-          },
           PLACE_FIELDS,
           fetchImpl
         )

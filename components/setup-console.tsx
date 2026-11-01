@@ -37,6 +37,7 @@ export function SetupConsole() {
   const [overlayUrl, setOverlayUrl] = useState("")
   const [busy, setBusy] = useState(false)
   const [travelMode, setTravelMode] = useState<TravelMode>("walk")
+  const [llmEnabled, setLlmEnabled] = useState(true)
 
   async function load() {
     setBusy(true)
@@ -132,6 +133,9 @@ export function SetupConsole() {
         ? saved
         : "walk"
     )
+    if (view?.settings) {
+      setLlmEnabled(view.settings.llmEnabled === true)
+    }
   }, [view])
 
   return (
@@ -250,7 +254,8 @@ export function SetupConsole() {
           <input
             name="llmEnabled"
             type="checkbox"
-            defaultChecked={settings.llmEnabled === true}
+            checked={llmEnabled}
+            onChange={(event) => setLlmEnabled(event.target.checked)}
           />
           Use OpenAI pitch cleanup and flags
         </label>

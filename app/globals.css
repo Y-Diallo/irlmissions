@@ -473,7 +473,23 @@ body:has(.overlay-canvas),
   text-shadow: 1px 1px 0 var(--show-ink);
 }
 
-.show-photo-credit a {
+.show-photo-byline {
+  margin-right: 0.45rem;
+}
+
+.show-google-maps-badge {
+  display: inline-block;
+  border: 2px solid #fff;
+  padding: 0.12rem 0.32rem;
+  color: #111329;
+  background: #fff;
+  font-family: Roboto, Arial, sans-serif;
+  font-weight: 700;
+  white-space: nowrap;
+  text-shadow: none;
+}
+
+.show-photo-credit a:not(.show-google-maps-badge) {
   text-decoration: underline;
   text-underline-offset: 0.12rem;
 }

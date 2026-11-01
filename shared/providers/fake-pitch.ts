@@ -47,7 +47,6 @@ export function createFakePitchProviders(
           ),
           durationMinutes: 10,
           riskFlags,
-          failConsequence: "Do a silly victory dance",
           anywhere: text.includes("[anywhere]"),
         }
       },
