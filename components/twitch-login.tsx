@@ -59,7 +59,7 @@ export function TwitchLogin({
             const identity = await response.json()
             if (active) {
               setUid(identity.uid)
-              setStatus("Twitch connected. Your producer console is next.")
+              setStatus("Twitch connected")
             }
           }
         } catch {
@@ -138,7 +138,9 @@ export function TwitchLogin({
     try {
       const response = await fetch("/api/auth/demo", { method: "POST" })
       const result = await response.json()
-      if (!response.ok) throw new Error(result.error ?? "Demo unavailable")
+      if (!response.ok) {
+        throw new Error(result.error ?? "Demo sign-in is unavailable.")
+      }
       const [{ getBrowserFirebase }, { signInWithCustomToken }] =
         await Promise.all([
           import("@/lib/firebase/client"),
@@ -146,8 +148,12 @@ export function TwitchLogin({
         ])
       await signInWithCustomToken(getBrowserFirebase().auth, result.token)
       setStatus("Demo connected.")
-    } catch {
-      setStatus("Demo sign-in is unavailable. Try again.")
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Demo sign-in is unavailable. Try again."
+      )
     } finally {
       setBusy(false)
     }

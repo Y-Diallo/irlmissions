@@ -2,15 +2,15 @@ import {
   createDemoOwnerToken,
   DemoDisabledError,
 } from "@/shared/auth/demo-owner"
+import { publicRequestOrigin } from "@/shared/public-origin"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
-  const requestUrl = new URL(request.url)
-  // Next may construct request.url with its internal hostname. The browser's
-  // Host header identifies the actual same-origin endpoint it requested.
-  requestUrl.host = request.headers.get("host") ?? requestUrl.host
-  if (request.headers.get("origin") !== requestUrl.origin) {
+  // App Hosting terminates HTTPS before forwarding to the Next container, so
+  // request.url may contain an internal HTTP origin. Compare against the
+  // proxy's public origin while still requiring an exact same-origin POST.
+  if (request.headers.get("origin") !== publicRequestOrigin(request, "")) {
     return Response.json({ error: "Invalid origin" }, { status: 403 })
   }
   try {

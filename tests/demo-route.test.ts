@@ -43,11 +43,12 @@ describe("demo route boundary", () => {
     vi.stubEnv("NODE_ENV", "production")
     vi.stubEnv("NEXT_PUBLIC_APP_MODE", "emulator")
     const response = await POST(
-      new Request("http://localhost:3000/api/auth/demo", {
+      new Request("http://0.0.0.0:8080/api/auth/demo", {
         method: "POST",
         headers: {
-          origin: "http://127.0.0.1:3000",
-          host: "127.0.0.1:3000",
+          origin: "https://producer.example",
+          "x-forwarded-host": "producer.example",
+          "x-forwarded-proto": "https",
         },
       })
     )
