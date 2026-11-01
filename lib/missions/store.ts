@@ -34,9 +34,10 @@ export function createMissionStore(db: Firestore, tenantId: string) {
         const pitchRef = db.doc(
           tenantDoc(tenantId, `pitches/${eventSubStorageId(redemptionId)}`)
         )
-        const [session, pitch] = await Promise.all([
+        const [session, pitch, settings] = await Promise.all([
           tx.get(sessionRef),
           tx.get(pitchRef),
+          tx.get(db.doc(tenantDoc(tenantId, "settings/current"))),
         ])
         if (["heading", "arrived"].includes(session.data()?.mission?.status)) {
           throw new MissionError("mission_in_progress")
@@ -56,12 +57,20 @@ export function createMissionStore(db: Firestore, tenantId: string) {
           if (tiedId === redemptionId) continue
           tiedSnapshots.push(
             await tx.get(
-              db.doc(tenantDoc(tenantId, `pitches/${eventSubStorageId(tiedId)}`))
+              db.doc(
+                tenantDoc(tenantId, `pitches/${eventSubStorageId(tiedId)}`)
+              )
             )
           )
         }
         const mission = createMissionFromPick(
-          { ...pitch.data(), redemptionId },
+          {
+            ...pitch.data(),
+            redemptionId,
+            ...(settings.data()?.noTravelMode === true
+              ? { noTravel: true }
+              : {}),
+          },
           now,
           tie?.lockId
         )
@@ -72,7 +81,12 @@ export function createMissionStore(db: Firestore, tenantId: string) {
             sessionRef,
             {
               mission,
-              poll: { ...rest, status: "canceled", errorCode: "owner_picked", updatedAt: now },
+              poll: {
+                ...rest,
+                status: "canceled",
+                errorCode: "owner_picked",
+                updatedAt: now,
+              },
             },
             { merge: true }
           )

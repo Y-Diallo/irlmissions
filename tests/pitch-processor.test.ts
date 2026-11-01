@@ -110,6 +110,20 @@ describe("pitch processor", () => {
     expect(state.deps.routes.walk).not.toHaveBeenCalled()
   })
 
+  it("treats every pitch as anywhere in channel no-travel mode", async () => {
+    const state = fixture()
+    state.context.noTravelMode = true
+    // Even a very stale location doesn't matter with nothing to search.
+    state.context.origin.observedAt = now - 60 * 60_000
+    await processPitch("redemption-1", state.deps)
+    expect(state.deps.places.search).not.toHaveBeenCalled()
+    expect(state.completed).toMatchObject({
+      destination: null,
+      warnings: [],
+      extraction: { anywhere: true },
+    })
+  })
+
   it("skips place search when the owner forced no travel", async () => {
     const state = fixture()
     vi.mocked(state.deps.store.claim).mockImplementationOnce(

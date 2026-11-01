@@ -63,9 +63,7 @@ export async function PATCH(request: Request) {
   try {
     const { owner, db } = await context(request)
     const update = parseSetupUpdate(await request.json())
-    const { createIntegrationStore } = await import(
-      "@/lib/integrations/store"
-    )
+    const { createIntegrationStore } = await import("@/lib/integrations/store")
     await Promise.all([
       db
         .doc(tenantDoc(owner.tenantId, "settings/current"))
@@ -87,18 +85,22 @@ export async function POST(request: Request) {
   try {
     const { owner, db } = await context(request)
     const action = parseSetupAction(await request.json())
+    if (action === "no_travel_on" || action === "no_travel_off") {
+      const noTravelMode = action === "no_travel_on"
+      await db
+        .doc(tenantDoc(owner.tenantId, "settings/current"))
+        .set({ noTravelMode }, { merge: true })
+      return NextResponse.json({ noTravelMode }, { headers: NO_STORE })
+    }
     if (action === "retry_twitch") {
-      const { createIntegrationStore } = await import(
-        "@/lib/integrations/store"
-      )
+      const { createIntegrationStore } =
+        await import("@/lib/integrations/store")
       await createIntegrationStore(db, owner.tenantId).retrySetup(Date.now())
-      const { processTenantTwitchSetup } = await import(
-        "@/lib/integrations/twitch-setup"
-      )
-      return NextResponse.json(
-        await processTenantTwitchSetup(owner.tenantId),
-        { headers: NO_STORE }
-      )
+      const { processTenantTwitchSetup } =
+        await import("@/lib/integrations/twitch-setup")
+      return NextResponse.json(await processTenantTwitchSetup(owner.tenantId), {
+        headers: NO_STORE,
+      })
     }
     if (action === "enable_reward" || action === "disable_reward") {
       if (action === "enable_reward") {
@@ -107,17 +109,19 @@ export async function POST(request: Request) {
           db.doc(tenantDoc(owner.tenantId, "private/integrations")).get(),
         ])
         const privateData = integration.data()
+        // A no-travel stream (e.g. a game) doesn't need RealtimeIRL.
+        const needsRealtimeIrl = settings.data()?.noTravelMode !== true
         if (
           !settings.exists ||
-          typeof privateData?.realtimeIrlPullKey !== "string" ||
+          (needsRealtimeIrl &&
+            typeof privateData?.realtimeIrlPullKey !== "string") ||
           typeof privateData?.overlayId !== "string"
         ) {
           throw new SetupError("setup_incomplete", 409)
         }
       }
-      const { setTenantRewardEnabled } = await import(
-        "@/lib/integrations/twitch-setup"
-      )
+      const { setTenantRewardEnabled } =
+        await import("@/lib/integrations/twitch-setup")
       return NextResponse.json(
         await setTenantRewardEnabled(
           owner.tenantId,
@@ -126,9 +130,8 @@ export async function POST(request: Request) {
         { headers: NO_STORE }
       )
     }
-    const { createOverlayAccessStore } = await import(
-      "@/lib/overlay/access-store"
-    )
+    const { createOverlayAccessStore } =
+      await import("@/lib/overlay/access-store")
     const credential = await createOverlayAccessStore(db).rotate(
       owner.tenantId,
       Date.now()

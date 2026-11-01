@@ -29,6 +29,11 @@ export type ProcessingContext = {
   defaultDurationMinutes: number
   travelMode: TravelMode
   locationMaxAgeMs?: number
+  /**
+   * Channel-wide no travel (e.g. streaming a game): every pitch is an
+   * anywhere pitch and no live location is needed.
+   */
+  noTravelMode?: boolean
 }
 
 export type RiskFlag = {
@@ -389,7 +394,8 @@ export async function processPitch(
 
   try {
     const context = await deps.context.read()
-    const warnings = validateContext(context, now)
+    // Location freshness only matters when a place will be searched.
+    const locationWarnings = validateContext(context, now)
     const permitted = await providerStep("automod_unavailable", () =>
       deps.automod.check({
         messageId: pitch.redemptionId,
@@ -410,17 +416,21 @@ export async function processPitch(
           )
         )
       : fallbackExtraction(pitch.rawText, context.defaultDurationMinutes)
-    if (extraction.anywhere || pitch.noTravel) {
+    if (extraction.anywhere || pitch.noTravel || context.noTravelMode) {
       if (
         !(await deps.store.complete(
           pitch,
           {
-            extraction,
+            // No place was searched, so the pitch stays anywhere even if
+            // no-travel mode is turned off later.
+            extraction: context.noTravelMode
+              ? { ...extraction, anywhere: true }
+              : extraction,
             destination: null,
             walkingRoute: null,
             duplicateSuggestions: [],
             straightLineMeters: null,
-            warnings,
+            warnings: [],
           },
           now
         ))
@@ -479,7 +489,7 @@ export async function processPitch(
           walkingRoute,
           duplicateSuggestions,
           straightLineMeters: Math.round(selected.fromOrigin),
-          warnings,
+          warnings: locationWarnings,
         },
         now
       ))

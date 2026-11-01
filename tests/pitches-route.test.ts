@@ -12,7 +12,13 @@ vi.mock("@/lib/auth/server", () => ({
   requireServerOwner: mocks.requireOwner,
 }))
 vi.mock("@/lib/firebase/admin", () => ({
-  getServerFirebase: () => ({ db: {} }),
+  getServerFirebase: () => ({
+    db: {
+      doc: () => ({
+        get: async () => ({ data: () => ({ noTravelMode: true }) }),
+      }),
+    },
+  }),
 }))
 vi.mock("@/lib/pitches/review-store", () => ({
   createPitchReviewStore: () => ({
@@ -45,6 +51,7 @@ describe("owner pitch routes", () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
       pitches: [{ redemptionId: "redemption-1" }],
+      noTravelMode: true,
     })
     expect(mocks.requireOwner).toHaveBeenCalledWith("Bearer owner-token")
     expect(mocks.list).toHaveBeenCalledOnce()

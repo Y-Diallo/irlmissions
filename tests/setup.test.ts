@@ -39,6 +39,8 @@ describe("tenant setup input", () => {
     expect(() => parseSetupAction({ action: "become_other_tenant" })).toThrow(
       "invalid_setup_action"
     )
+    expect(parseSetupAction({ action: "no_travel_on" })).toBe("no_travel_on")
+    expect(parseSetupAction({ action: "no_travel_off" })).toBe("no_travel_off")
     expect(() =>
       parseSetupUpdate({
         searchRadiusMeters: 5000,

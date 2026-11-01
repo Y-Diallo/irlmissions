@@ -90,10 +90,7 @@ export function SetupConsole() {
 
   async function action(
     value:
-      | "retry_twitch"
-      | "rotate_overlay"
-      | "enable_reward"
-      | "disable_reward"
+      "retry_twitch" | "rotate_overlay" | "enable_reward" | "disable_reward"
   ) {
     setBusy(true)
     try {
@@ -162,7 +159,8 @@ export function SetupConsole() {
             disabled={
               busy ||
               (!view.rewardEnabled &&
-                (!view.realtimeIrlConfigured ||
+                ((!view.realtimeIrlConfigured &&
+                  view.settings?.noTravelMode !== true) ||
                   !view.overlayConfigured ||
                   !view.settings))
             }
@@ -172,7 +170,9 @@ export function SetupConsole() {
               )
             }
           >
-            {view.rewardEnabled ? "Disable pitch reward" : "Enable pitch reward"}
+            {view.rewardEnabled
+              ? "Disable pitch reward"
+              : "Enable pitch reward"}
           </Button>
         )}
       </section>
@@ -192,12 +192,38 @@ export function SetupConsole() {
           />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <SetupNumber name="searchRadiusMeters" label="Search radius (m)" value={settings.searchRadiusMeters ?? 5000} />
-          <SetupNumber name="defaultDurationMinutes" label="Mission minutes" value={settings.defaultDurationMinutes ?? 10} />
-          <SetupNumber name="arrivalRadiusMeters" label="Arrival radius (m)" value={settings.arrivalRadiusMeters ?? 50} />
-          <SetupNumber name="baseRadiusMeters" label="Home privacy radius (m)" value={base.radiusMeters ?? 150} />
-          <SetupNumber name="latitude" label="Home latitude" value={base.latitude ?? ""} step="any" />
-          <SetupNumber name="longitude" label="Home longitude" value={base.longitude ?? ""} step="any" />
+          <SetupNumber
+            name="searchRadiusMeters"
+            label="Search radius (m)"
+            value={settings.searchRadiusMeters ?? 5000}
+          />
+          <SetupNumber
+            name="defaultDurationMinutes"
+            label="Mission minutes"
+            value={settings.defaultDurationMinutes ?? 10}
+          />
+          <SetupNumber
+            name="arrivalRadiusMeters"
+            label="Arrival radius (m)"
+            value={settings.arrivalRadiusMeters ?? 50}
+          />
+          <SetupNumber
+            name="baseRadiusMeters"
+            label="Home privacy radius (m)"
+            value={base.radiusMeters ?? 150}
+          />
+          <SetupNumber
+            name="latitude"
+            label="Home latitude"
+            value={base.latitude ?? ""}
+            step="any"
+          />
+          <SetupNumber
+            name="longitude"
+            label="Home longitude"
+            value={base.longitude ?? ""}
+            step="any"
+          />
         </div>
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium">Travel mode</legend>
@@ -221,7 +247,11 @@ export function SetupConsole() {
           </p>
         </fieldset>
         <label className="flex min-h-12 items-center gap-3">
-          <input name="llmEnabled" type="checkbox" defaultChecked={settings.llmEnabled === true} />
+          <input
+            name="llmEnabled"
+            type="checkbox"
+            defaultChecked={settings.llmEnabled === true}
+          />
           Use OpenAI pitch cleanup and flags
         </label>
         <Button className="min-h-12" disabled={busy} type="submit">
@@ -239,7 +269,7 @@ export function SetupConsole() {
           {view?.overlayConfigured ? "Regenerate OBS URL" : "Generate OBS URL"}
         </Button>
         {overlayUrl && (
-          <p className="mt-3 break-all rounded bg-muted p-3 font-mono text-sm">
+          <p className="mt-3 rounded bg-muted p-3 font-mono text-sm break-all">
             {overlayUrl}
           </p>
         )}
@@ -263,7 +293,14 @@ function SetupNumber({
   return (
     <div className="space-y-2">
       <Label htmlFor={name}>{label}</Label>
-      <Input id={name} name={name} type="number" step={step} defaultValue={String(value)} required />
+      <Input
+        id={name}
+        name={name}
+        type="number"
+        step={step}
+        defaultValue={String(value)}
+        required
+      />
     </div>
   )
 }

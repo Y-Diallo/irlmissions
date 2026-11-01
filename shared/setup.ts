@@ -96,7 +96,9 @@ export function parseSetupAction(value: unknown) {
     action !== "rotate_overlay" &&
     action !== "retry_twitch" &&
     action !== "enable_reward" &&
-    action !== "disable_reward"
+    action !== "disable_reward" &&
+    action !== "no_travel_on" &&
+    action !== "no_travel_off"
   ) {
     throw new SetupError("invalid_setup_action")
   }

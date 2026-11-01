@@ -477,6 +477,32 @@ export function PitchQueue() {
   const [loading, setLoading] = useState(true)
   const [pollBusy, setPollBusy] = useState(false)
   const [pollMessage, setPollMessage] = useState("")
+  const [noTravelMode, setNoTravelMode] = useState(false)
+  const [modeBusy, setModeBusy] = useState(false)
+
+  async function toggleNoTravelMode(enabled: boolean) {
+    setModeBusy(true)
+    setMessage("")
+    try {
+      const response = await fetch("/api/setup", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${await token()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: enabled ? "no_travel_on" : "no_travel_off",
+        }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? "unavailable")
+      setNoTravelMode(result.noTravelMode === true)
+    } catch {
+      setMessage("Could not change no-travel mode. Try again.")
+    } finally {
+      setModeBusy(false)
+    }
+  }
   const [message, setMessage] = useState("Sign in to review pitches.")
   const [warningToast, setWarningToast] = useState("")
   const shownWarnings = useRef(new Set<string>())
@@ -530,6 +556,7 @@ export function PitchQueue() {
         )
       }
       setPitches(nextPitches)
+      setNoTravelMode(pitchBody.noTravelMode === true)
       setPoll(pollBody.poll)
       setMission(missionBody.mission)
       setSelected((current) => {
@@ -753,6 +780,25 @@ export function PitchQueue() {
           Refresh
         </Button>
       </div>
+      {signedIn && (
+        <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
+          <input
+            type="checkbox"
+            className="size-5 accent-primary"
+            checked={noTravelMode}
+            disabled={modeBusy}
+            onChange={(event) => void toggleNoTravelMode(event.target.checked)}
+          />
+          <span>
+            <span className="font-medium">No-travel mode</span>
+            <span className="block text-sm text-muted-foreground">
+              {noTravelMode
+                ? "On: every mission happens where you are (e.g. in a game). No places are searched and the timer starts right away."
+                : "Off: pitches are matched to real places nearby."}
+            </span>
+          </span>
+        </label>
+      )}
       {signedIn && mission && (
         <MissionCard mission={mission} onAction={missionAction} />
       )}

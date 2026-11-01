@@ -148,13 +148,24 @@ export function createPitchContextProvider(db: Firestore, tenantId: string) {
         db.doc(tenantDoc(tenantId, "settings/current")).get(),
         db.doc(tenantDoc(tenantId, "privateState/location")).get(),
       ])
-      if (!settingsSnapshot.exists || !locationSnapshot.exists) {
+      const noTravelMode = settingsSnapshot.data()?.noTravelMode === true
+      if (
+        !settingsSnapshot.exists ||
+        (!locationSnapshot.exists && !noTravelMode)
+      ) {
         throw new Error("Processing settings or private location are missing")
       }
       const settings = settingsSnapshot.data()!
-      const location = locationSnapshot.data()!
       const baseZone = object(settings.baseZone, "baseZone")
+      // No-travel mode never searches places, so the origin is only a
+      // placeholder when there is no live location (e.g. a game stream).
+      const location = locationSnapshot.data() ?? {
+        latitude: baseZone.latitude,
+        longitude: baseZone.longitude,
+        observedAt: Date.now(),
+      }
       return {
+        noTravelMode,
         origin: {
           latitude: number(location.latitude, "location.latitude"),
           longitude: number(location.longitude, "location.longitude"),
@@ -180,9 +191,7 @@ export function createPitchContextProvider(db: Firestore, tenantId: string) {
           settings.defaultDurationMinutes,
           "defaultDurationMinutes"
         ),
-        travelMode: ["walk", "transit", "drive"].includes(
-          settings.travelMode
-        )
+        travelMode: ["walk", "transit", "drive"].includes(settings.travelMode)
           ? settings.travelMode
           : "walk",
         ...(settings.locationMaxAgeMs === undefined

@@ -58,6 +58,7 @@ function twitchPollFromEvent(
 export function createPollEndStore(db: Firestore, tenantId: string) {
   const sessionRef = db.doc(tenantDoc(tenantId, "sessions/current"))
   const publicStateRef = db.doc(tenantDoc(tenantId, "publicState/current"))
+  const settingsRef = db.doc(tenantDoc(tenantId, "settings/current"))
   return {
     async findPending(limit = 5) {
       const snapshot = await db
@@ -76,10 +77,13 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
         const eventRef = db.doc(
           tenantDoc(tenantId, `pollEvents/${eventSubStorageId(pollId)}`)
         )
-        const [eventSnapshot, sessionSnapshot] = await Promise.all([
-          tx.get(eventRef),
-          tx.get(sessionRef),
-        ])
+        const [eventSnapshot, sessionSnapshot, settingsSnapshot] =
+          await Promise.all([
+            tx.get(eventRef),
+            tx.get(sessionRef),
+            tx.get(settingsRef),
+          ])
+        const noTravelMode = settingsSnapshot.data()?.noTravelMode === true
         if (!eventSnapshot.exists) return "ignored" as const
         const event = eventSnapshot.data() as PendingPollEnd
         if (event.processing?.status !== "pending") return "ignored" as const
@@ -126,7 +130,12 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
 
         let mission: MissionRecord | null = null
         try {
-          mission = winningMission(resolution, pitchSnapshots, now)
+          mission = winningMission(
+            resolution,
+            pitchSnapshots,
+            noTravelMode,
+            now
+          )
         } catch (error) {
           if (!(error instanceof MissionError)) throw error
           tx.update(eventRef, {
@@ -140,7 +149,14 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
           return "error" as const
         }
 
-        writeResolution(tx, poll.lockId, resolution, mission, pitchSnapshots, now)
+        writeResolution(
+          tx,
+          poll.lockId,
+          resolution,
+          mission,
+          pitchSnapshots,
+          now
+        )
         const outcome = resolution.winnerRedemptionId
           ? ("winner" as const)
           : resolution.tiedRedemptionIds.length
@@ -179,12 +195,28 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
     // The owner breaks a tie by picking one of the tied choices.
     chooseTieWinner(redemptionId: string, now: number) {
       return db.runTransaction(async (tx) => {
-        const poll = currentPoll((await tx.get(sessionRef)).data())
+        const [session, settings] = await Promise.all([
+          tx.get(sessionRef),
+          tx.get(settingsRef),
+        ])
+        const poll = currentPoll(session.data())
         if (!poll) throw new PollError("poll_not_tied")
         const resolution = resolveTie(poll, redemptionId, now)
         const pitchSnapshots = await readPitches(tx, poll)
-        const mission = winningMission(resolution, pitchSnapshots, now)
-        writeResolution(tx, poll.lockId, resolution, mission, pitchSnapshots, now)
+        const mission = winningMission(
+          resolution,
+          pitchSnapshots,
+          settings.data()?.noTravelMode === true,
+          now
+        )
+        writeResolution(
+          tx,
+          poll.lockId,
+          resolution,
+          mission,
+          pitchSnapshots,
+          now
+        )
         return { poll: resolution.poll, mission }
       })
     },
@@ -210,6 +242,7 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
   function winningMission(
     resolution: PollResolution,
     pitchSnapshots: DocumentSnapshot[],
+    noTravelMode: boolean,
     now: number
   ) {
     if (!resolution.winnerRedemptionId) return null
@@ -218,7 +251,12 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
         snapshot.data()?.redemptionId === resolution.winnerRedemptionId
     )
     if (!winner?.exists) throw new MissionError("winner_not_found", 500)
-    return createMissionFromWinner(resolution.poll, winner.data()!, now)
+    const pitch = winner.data()!
+    return createMissionFromWinner(
+      resolution.poll,
+      noTravelMode ? { ...pitch, noTravel: true } : pitch,
+      now
+    )
   }
 
   function writeResolution(
