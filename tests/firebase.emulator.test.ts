@@ -403,13 +403,13 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
           3000
         )
       ).resolves.toBe(false)
-      await expect(store.reject(winner, "no_public_place", 3000)).resolves.toBe(
+      await expect(store.reject(winner, "no_place_found", 3000)).resolves.toBe(
         true
       )
       const saved = (await db.doc(`owners/42/pitches/${pitchId}`).get()).data()
       expect(saved).toMatchObject({
         reviewStatus: "rejected",
-        rejectionReason: "no_public_place",
+        rejectionReason: "no_place_found",
         processing: { status: "complete", attempts: 1 },
       })
     })

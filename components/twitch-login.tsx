@@ -23,6 +23,7 @@ export function TwitchLogin({
   const [uid, setUid] = useState<string | null>(null)
   const [status, setStatus] = useState("Checking sign-in…")
   const [busy, setBusy] = useState(false)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -66,10 +67,12 @@ export function TwitchLogin({
             setStatus("Could not check your connection. Refresh to retry.")
         } finally {
           checking = false
+          if (active) setReady(true)
         }
       }
       unsubscribe = onAuthStateChanged(auth, (user) => {
         if (!active) return
+        setReady(false)
         setUid(null)
         if (user) void check()
         else {
@@ -82,6 +85,7 @@ export function TwitchLogin({
                   "Sign-in could not finish. Please try again.")
               : "Sign in with your streamer's Twitch account."
           )
+          setReady(true)
         }
       })
       // Validate active OAuth sessions more frequently than Twitch's hourly minimum.
@@ -97,7 +101,10 @@ export function TwitchLogin({
       document.addEventListener("visibilitychange", onVisible)
     }
     connect().catch(() => {
-      if (active) setStatus("Configure Firebase and Twitch to enable sign-in.")
+      if (active) {
+        setStatus("Configure Firebase and Twitch to enable sign-in.")
+        setReady(true)
+      }
     })
     return () => {
       active = false
@@ -147,11 +154,28 @@ export function TwitchLogin({
   }
 
   return (
-    <div className={compact ? "flex flex-col items-end gap-2" : "space-y-4"}>
-      {uid ? (
+    <div
+      className={
+        compact
+          ? "grid w-44 shrink-0 grid-rows-[2.75rem_2rem] gap-2"
+          : "space-y-4"
+      }
+    >
+      {!ready ? (
+        <div
+          className={
+            compact
+              ? "h-11 w-full animate-pulse rounded-md border bg-muted"
+              : "h-12 w-44 animate-pulse rounded-md border bg-muted"
+          }
+          aria-hidden="true"
+        />
+      ) : uid ? (
         <Button
           className={
-            compact ? "min-h-11 min-w-40 px-4" : "min-h-12 px-5 text-base"
+            compact
+              ? "min-h-11 w-full px-4"
+              : "min-h-12 px-5 text-base"
           }
           variant="outline"
           disabled={busy}
@@ -162,40 +186,51 @@ export function TwitchLogin({
           {busy ? "Signing out…" : "Sign out"}
         </Button>
       ) : (
-        <div className="flex flex-wrap justify-end gap-2">
+        <div
+          className={
+            compact && demoEnabled
+              ? "grid grid-cols-2 gap-2"
+              : "flex justify-end"
+          }
+        >
           <a
             className={buttonVariants({
-              className: compact ? "min-h-11 px-4" : "min-h-12 px-5 text-base",
+              className: compact
+                ? "min-h-11 w-full px-3"
+                : "min-h-12 px-5 text-base",
             })}
             href="/api/auth/twitch/login"
+            aria-label="Sign in with Twitch"
           >
-            Sign in with Twitch
+            {compact && demoEnabled ? "Twitch" : "Sign in with Twitch"}
           </a>
           {demoEnabled && (
             <Button
-              className={compact ? "min-h-11 px-4" : "min-h-12 px-5 text-base"}
+              className={
+                compact
+                  ? "min-h-11 w-full px-3"
+                  : "min-h-12 px-5 text-base"
+              }
               variant="outline"
               disabled={busy}
               onClick={() => void loginDemo()}
+              aria-label="Try demo account"
             >
-              Try demo account
+              {compact ? "Try demo" : "Try demo account"}
             </Button>
           )}
         </div>
       )}
-      {(!compact || !uid) && (
-        <p
-          role="status"
-          className={
-            compact
-              ? "h-8 max-w-64 overflow-hidden text-right text-xs leading-relaxed text-muted-foreground"
-              : "text-sm leading-relaxed"
-          }
-        >
-          {status}
-        </p>
-      )}
-      {compact && uid && <span className="block h-8" aria-hidden="true" />}
+      <p
+        role="status"
+        className={
+          compact
+            ? "h-8 w-full overflow-hidden text-right text-xs leading-relaxed text-muted-foreground"
+            : "text-sm leading-relaxed"
+        }
+      >
+        {ready ? status : "Checking sign-in…"}
+      </p>
     </div>
   )
 }

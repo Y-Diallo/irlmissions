@@ -80,8 +80,11 @@ const errors: Record<string, string> = {
 const rejectionReasons: Record<string, string> = {
   owner: "owner decision",
   owner_removed: "removed by owner",
+  no_place_found: "Google Places found no matching destination",
+  no_public_place: "Google Places found no matching destination",
   lost_polls: "lost too many polls",
   out_of_range: "the place is out of range now",
+  privacy_zone: "the destination is inside the privacy zone",
   place_closed: "the place is closed now",
   mission_canceled: "mission canceled",
 }
@@ -221,8 +224,15 @@ function PitchCard({
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
   const [confirmRemove, setConfirmRemove] = useState(false)
-  const [processingDelayed, setProcessingDelayed] = useState(false)
   const now = useCountdown(pitch.vetoUntil)
+  const processingDelayAt =
+    pitch.reviewStatus === "processing" &&
+    pitch.processing?.status !== "error"
+      ? pitch.updatedAt + 30_000
+      : null
+  const processingNow = useCountdown(processingDelayAt)
+  const processingDelayed =
+    processingDelayAt !== null && processingNow >= processingDelayAt
   const vetoSecondsLeft =
     pitch.reviewStatus === "approved" && pitch.vetoUntil !== null
       ? Math.max(0, Math.ceil((pitch.vetoUntil - now) / 1000))
@@ -278,20 +288,6 @@ function PitchCard({
     serverConsequenceDuration.current = next
     setConsequenceDuration((current) => (current === previous ? next : current))
   }, [pitch.consequenceDurationMinutes])
-
-  useEffect(() => {
-    if (
-      pitch.reviewStatus !== "processing" ||
-      pitch.processing?.status === "error"
-    ) {
-      return
-    }
-    const timeout = setTimeout(
-      () => setProcessingDelayed(true),
-      Math.max(0, pitch.createdAt + 30_000 - Date.now())
-    )
-    return () => clearTimeout(timeout)
-  }, [pitch.createdAt, pitch.processing?.status, pitch.reviewStatus])
 
   async function act(action: () => Promise<void>) {
     setBusy(true)
@@ -478,7 +474,10 @@ function PitchCard({
               variant="outline"
               disabled={busy || !rawText.trim()}
               onClick={() =>
-                void act(() => mutate(pitch, { action: "edit_raw", rawText }))
+                void act(async () => {
+                  await mutate(pitch, { action: "edit_raw", rawText })
+                  await processNow(pitch)
+                })
               }
             >
               Save pitch and reprocess

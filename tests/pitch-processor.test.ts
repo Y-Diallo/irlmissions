@@ -179,13 +179,13 @@ describe("pitch processor", () => {
     expect(state.rejected).toBeNull()
   })
 
-  it("rejects when no eligible public place exists", async () => {
+  it("rejects with a precise reason when Google finds no place", async () => {
     const state = fixture("[no-place] imaginary venue")
     await expect(processPitch("redemption-1", state.deps)).resolves.toEqual({
       kind: "rejected",
-      reason: "no_public_place",
+      reason: "no_place_found",
     })
-    expect(state.rejected).toBe("no_public_place")
+    expect(state.rejected).toBe("no_place_found")
   })
 
   it("excludes the base zone but does not gate Google results by publicAccess", async () => {

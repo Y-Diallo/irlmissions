@@ -115,7 +115,7 @@ export type PitchStore = {
   ): Promise<boolean>
   reject(
     pitch: ProcessingPitch,
-    reason: "automod" | "no_public_place",
+    reason: PitchRejectionReason,
     now: number
   ): Promise<boolean>
   fail(
@@ -127,6 +127,13 @@ export type PitchStore = {
     }
   ): Promise<boolean>
 }
+
+export type PitchRejectionReason =
+  | "automod"
+  | "no_place_found"
+  | "out_of_range"
+  | "privacy_zone"
+  | "place_closed"
 
 export type PitchProcessorDependencies = {
   store: PitchStore
@@ -162,7 +169,7 @@ export type PitchProcessorDependencies = {
 
 export type ProcessPitchResult =
   | { kind: "not_claimed" }
-  | { kind: "rejected"; reason: "automod" | "no_public_place" }
+  | { kind: "rejected"; reason: PitchRejectionReason }
   | { kind: "ready_for_review"; flagged: boolean }
   | { kind: "retry"; code: string; automaticRetryAt: number | null }
 
@@ -387,6 +394,35 @@ function eligiblePlaces(
     })
 }
 
+function placeRejectionReason(
+  candidates: PlaceCandidate[],
+  context: ProcessingContext
+): Exclude<PitchRejectionReason, "automod"> {
+  if (candidates.length === 0) return "no_place_found"
+  const measured = candidates.map((candidate) => ({
+    candidate,
+    fromOrigin: distanceMeters(context.origin, candidate),
+    fromBase: distanceMeters(context.baseZone, candidate),
+  }))
+  const open = measured.filter(
+    ({ candidate }) => candidate.businessStatus !== "closed_permanently"
+  )
+  if (open.length === 0) return "place_closed"
+  const inRange = open.filter(
+    ({ fromOrigin }) => fromOrigin <= context.searchRadiusMeters
+  )
+  if (inRange.length === 0) return "out_of_range"
+  if (
+    inRange.every(
+      ({ fromBase }) => fromBase <= context.baseZone.radiusMeters
+    )
+  ) {
+    return "privacy_zone"
+  }
+  // Defensive fallback if eligibility gains another restriction later.
+  return "no_place_found"
+}
+
 function validateRoute(route: WalkingRoute) {
   if (
     !Number.isFinite(route.distanceMeters) ||
@@ -512,10 +548,11 @@ export async function processPitch(
     )
     const [selected] = eligiblePlaces(candidates, context)
     if (!selected) {
-      if (!(await deps.store.reject(pitch, "no_public_place", now))) {
+      const reason = placeRejectionReason(candidates, context)
+      if (!(await deps.store.reject(pitch, reason, now))) {
         throw new ProcessingError("claim_lost")
       }
-      return { kind: "rejected", reason: "no_public_place" }
+      return { kind: "rejected", reason }
     }
 
     const walkingRoute = {
