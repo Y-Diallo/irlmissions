@@ -195,15 +195,26 @@ describe("public overlay projection", () => {
   it("shows an active consequence throughout its clearing mission", () => {
     const withPenalty: MissionRecord = {
       ...mission,
-      activeConsequence: {
-        text: "Eat a lemon",
-        clearRule: "through_next_mission",
-        sourceMissionId: "previous-mission",
-      },
+      activeConsequences: [
+        {
+          consequenceId: "consequence-1",
+          text: "Eat a lemon",
+          clearRule: "through_next_mission",
+          sourceMissionId: "previous-mission",
+          setBy: "CoolViewer",
+          activatedAt: now - 1000,
+        },
+      ],
     }
     expect(missionOverlay(withPenalty)).toMatchObject({
-      consequence: "Eat a lemon",
-      consequenceClearRule: "through_next_mission",
+      consequences: [
+        {
+          consequenceId: "consequence-1",
+          text: "Eat a lemon",
+          clearRule: "through_next_mission",
+          setBy: "CoolViewer",
+        },
+      ],
     })
     expect(
       missionOverlay({
@@ -211,19 +222,55 @@ describe("public overlay projection", () => {
         status: "arrived",
         timerEndsAt: now + 60_000,
       })
-    ).toMatchObject({ consequence: "Eat a lemon" })
+    ).toMatchObject({ consequences: [{ text: "Eat a lemon" }] })
     expect(
       toOverlayView({
         state: "heading",
         updatedAt: now,
         objective: "Go",
         chosenBy: "Chat",
-        consequence: "Eat a lemon",
+        consequences: [
+          {
+            consequenceId: "consequence-1",
+            text: "Eat a lemon",
+            setBy: "CoolViewer",
+            clearRule: "through_next_mission",
+          },
+        ],
       })
     ).toMatchObject({
-      consequence: "Eat a lemon",
-      consequenceClearRule: "through_next_mission",
+      consequences: [
+        {
+          text: "Eat a lemon",
+          setBy: "CoolViewer",
+          clearRule: "through_next_mission",
+        },
+      ],
     })
+  })
+
+  it("clears a stored timed consequence at endsAt after a reload", () => {
+    const stored = {
+      state: "heading",
+      updatedAt: now,
+      objective: "Go",
+      chosenBy: "Chat",
+      consequences: [
+        {
+          consequenceId: "timed-1",
+          text: "Use a pirate voice",
+          setBy: "CoolViewer",
+          clearRule: "timed",
+          endsAt: now + 600_000,
+        },
+      ],
+    }
+    expect(toOverlayView(stored, now + 599_999)).toMatchObject({
+      consequences: [{ consequenceId: "timed-1" }],
+    })
+    expect(toOverlayView(stored, now + 600_000)).not.toHaveProperty(
+      "consequences"
+    )
   })
 
   it("publishes only photo availability after reveal", () => {

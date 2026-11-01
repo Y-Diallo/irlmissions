@@ -23,6 +23,22 @@ function timer(milliseconds: number) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`
 }
 
+function consequenceStatus(
+  consequence: NonNullable<
+    Extract<OverlayProjection, { state: "heading" }>["consequences"]
+  >[number],
+  now: number
+) {
+  if (consequence.clearRule === "timed" && consequence.endsAt) {
+    return `${timer(consequence.endsAt - now)} left`
+  }
+  if (consequence.clearRule === "at_next_stop") return "Pay at next stop"
+  if (consequence.clearRule === "through_next_mission") {
+    return "Until next mission ends"
+  }
+  return "Until streamer marks paid"
+}
+
 type PhotoAttribution = {
   displayName: string
   uri?: string
@@ -99,6 +115,10 @@ function Card({
   const terminal = overlay.state === "completed" || overlay.state === "failed"
   const heading = overlay.state === "heading"
   const photoVisible = Boolean(photo.uri && "hasPlacePhoto" in overlay)
+  const displayNow = now || overlay.updatedAt
+  const consequences = (overlay.consequences ?? []).filter(
+    (consequence) => !consequence.endsAt || consequence.endsAt > displayNow
+  )
   return (
     <div
       className={`show-card show-card--${overlay.state} ${photoVisible ? "show-card--photo" : ""}`}
@@ -179,11 +199,15 @@ function Card({
         )}
         <p className="show-label">CURRENT OBJECTIVE</p>
         <h1 className="show-objective">{overlay.objective}</h1>
-        {"consequence" in overlay && overlay.consequence && (
-          <div className="show-consequence">
-            <span>ACTIVE CONSEQUENCE</span>
-            <strong>{overlay.consequence}</strong>
-            <small>CLEARS ON NEXT COMPLETE / FAIL</small>
+        {consequences.length > 0 && (
+          <div className="show-consequences">
+            {consequences.map((consequence) => (
+              <div className="show-consequence" key={consequence.consequenceId}>
+                <span>OWED BY {consequence.setBy}</span>
+                <strong>{consequence.text}</strong>
+                <small>{consequenceStatus(consequence, displayNow)}</small>
+              </div>
+            ))}
           </div>
         )}
         {"placeName" in overlay && overlay.placeName && (
@@ -199,14 +223,14 @@ function Card({
           <div className="show-timer-block">
             <span>TIME REMAINING</span>
             <div className="show-timer" role="timer">
-              {timer(overlay.timerEndsAt - now)}
+              {timer(overlay.timerEndsAt - displayNow)}
             </div>
           </div>
         )}
         {overlay.state === "completed" && (
           <p className="show-result-message">Challenge cleared!</p>
         )}
-        {overlay.state === "failed" && !overlay.consequence && (
+        {overlay.state === "failed" && consequences.length === 0 && (
           <p className="show-result-message">Challenge failed.</p>
         )}
       </div>

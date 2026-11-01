@@ -7,7 +7,7 @@ import {
 } from "firebase-admin/firestore"
 import { eventSubStorageId, type PendingPollEnd } from "@/shared/eventsub"
 import {
-  carryActiveConsequence,
+  carryActiveConsequences,
   createMissionFromWinner,
   MissionError,
   type MissionRecord,
@@ -256,13 +256,14 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
     )
     if (!winner?.exists) throw new MissionError("winner_not_found", 500)
     const pitch = winner.data()!
-    return carryActiveConsequence(
+    return carryActiveConsequences(
       createMissionFromWinner(
         resolution.poll,
         noTravelMode ? { ...pitch, noTravel: true } : pitch,
         now
       ),
-      previousMission ?? null
+      previousMission ?? null,
+      now
     )
   }
 

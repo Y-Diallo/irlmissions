@@ -34,6 +34,8 @@ const schema = {
     "durationMinutes",
     "riskFlags",
     "failConsequence",
+    "consequenceClearRule",
+    "consequenceDurationMinutes",
     "anywhere",
   ],
   properties: {
@@ -61,6 +63,19 @@ const schema = {
       type: "string",
       description:
         "The viewer-provided penalty for failing or losing, restated in at most 80 characters. Phrases such as if you lose, if you fail, or if time runs out introduce the consequence. Preserve it even when it needs a risk flag so the owner can decide. Return an empty string when the viewer did not explicitly provide one. Never invent a consequence.",
+    },
+    consequenceClearRule: {
+      type: "string",
+      enum: ["timed", "at_next_stop", "through_next_mission", "manual"],
+      description:
+        "How an explicitly provided failure consequence clears. timed for a stated duration; at_next_stop when it lasts until reaching the next destination; through_next_mission when it lasts through the following mission; manual only when no automatic rule fits. Use through_next_mission when ambiguous and also when failConsequence is empty.",
+    },
+    consequenceDurationMinutes: {
+      type: "integer",
+      minimum: 0,
+      maximum: 1440,
+      description:
+        "Duration in whole minutes for a timed consequence, extracted from the viewer's wording. Return 0 for every non-timed rule and when failConsequence is empty.",
     },
     riskFlags: {
       type: "array",
@@ -158,7 +173,7 @@ export function createOpenAIPitchExtractor(
               store: false,
               max_output_tokens: 1000,
               instructions:
-                "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. A verb like go, walk, run, explore, or trick-or-treat is not a destination: set anywhere=true unless the viewer explicitly names a place or requests a kind of place. Named public businesses, attractions, markets, parks, neighborhoods, districts, and cities are valid destinations. Flag dangerous, illegal, harassing, coercive, or otherwise concerning activity for human review, including any requested failure consequence. Ordinary public social interaction must not produce a risk flag by itself. Talking to someone, asking a question, requesting help, trick-or-treating, or inviting a stranger to a harmless game or challenge are normal IRL activities. Do not assume harassment or lack of consent merely because the participant is a stranger. Flag social interaction when the request itself calls for harassment, intimidation, coercion, following, unwanted persistence after refusal, sexual conduct, targeting minors or vulnerable people, or filming or touching without consent. Preserve an explicitly viewer-provided consequence and flag it when concerning so the owner can decide. If the viewer did not provide a consequence, return an empty string; never invent one. The public label is a poll choice of at most 25 characters that plainly restates the viewer's request. Do not make it vague or mysterious. Big chain names are fine because they don't reveal which location; leave out exact addresses and local destination names before arrival.",
+                "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. A verb like go, walk, run, explore, or trick-or-treat is not a destination: set anywhere=true unless the viewer explicitly names a place or requests a kind of place. Named public businesses, attractions, markets, parks, neighborhoods, districts, and cities are valid destinations. Flag dangerous, illegal, harassing, coercive, or otherwise concerning activity for human review, including any requested failure consequence. Ordinary public social interaction must not produce a risk flag by itself. Talking to someone, asking a question, requesting help, trick-or-treating, or inviting a stranger to a harmless game or challenge are normal IRL activities. Do not assume harassment or lack of consent merely because the participant is a stranger. Flag social interaction when the request itself calls for harassment, intimidation, coercion, following, unwanted persistence after refusal, sexual conduct, targeting minors or vulnerable people, or filming or touching without consent. Preserve an explicitly viewer-provided consequence and flag it when concerning so the owner can decide. If the viewer did not provide a consequence, return an empty string; never invent one. For a consequence, return its clearing rule: timed when the viewer states a duration and extract whole minutes; at_next_stop when it lasts until the next arrival or stop; through_next_mission when it lasts through the next mission; manual only when no automatic rule fits. When the wording is ambiguous, default to through_next_mission. Return duration 0 for non-timed rules. The public label is a poll choice of at most 25 characters that plainly restates the viewer's request. Do not make it vague or mysterious. Big chain names are fine because they don't reveal which location; leave out exact addresses and local destination names before arrival.",
               input: text,
               text: {
                 format: {

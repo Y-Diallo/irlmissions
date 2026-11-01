@@ -1,12 +1,16 @@
 import type {
   DuplicateSuggestion,
+  ConsequenceClearRule,
   PitchExtraction,
   PlaceCandidate,
   ProcessingWarning,
   RiskFlag,
   WalkingRoute,
 } from "@/shared/pitches/processor"
-import { MAX_FAIL_CONSEQUENCE_LENGTH } from "@/shared/pitches/processor"
+import {
+  MAX_CONSEQUENCE_DURATION_MINUTES,
+  MAX_FAIL_CONSEQUENCE_LENGTH,
+} from "@/shared/pitches/processor"
 import { MAX_POLL_CHOICE_LENGTH, withoutDashes } from "@/shared/polls"
 import type { RedemptionResolution } from "@/shared/redemptions"
 
@@ -70,6 +74,8 @@ export type PitchReviewItem = {
   durationMinutes: number
   riskFlags: RiskFlag[]
   failConsequence: string | null
+  consequenceClearRule: ConsequenceClearRule
+  consequenceDurationMinutes: number
   /** No place: the mission is done wherever the streamer is. */
   anywhere: boolean
   /** The owner forced no travel (vs. the AI deciding it). */
@@ -102,6 +108,8 @@ export type ReviewCommand =
       publicLabel: string
       durationMinutes: number
       failConsequence: string
+      consequenceClearRule: ConsequenceClearRule
+      consequenceDurationMinutes: number
     }
   | { action: "set_no_travel"; noTravel: boolean }
   | { action: "approve" }
@@ -157,10 +165,32 @@ export function parseReviewCommand(value: unknown): ReviewCommand {
       }
     case "edit_details": {
       const durationMinutes = input.durationMinutes
+      const failConsequence = cleanOptionalText(
+        input.failConsequence,
+        "fail_consequence",
+        MAX_FAIL_CONSEQUENCE_LENGTH
+      )
+      const consequenceClearRule = input.consequenceClearRule
+      if (
+        consequenceClearRule !== "timed" &&
+        consequenceClearRule !== "at_next_stop" &&
+        consequenceClearRule !== "through_next_mission" &&
+        consequenceClearRule !== "manual"
+      ) {
+        throw new PitchReviewError("invalid_consequence_rule", 400)
+      }
+      const consequenceDurationMinutes = input.consequenceDurationMinutes
       if (
         !Number.isInteger(durationMinutes) ||
         (durationMinutes as number) < 1 ||
-        (durationMinutes as number) > 120
+        (durationMinutes as number) > 120 ||
+        !Number.isInteger(consequenceDurationMinutes) ||
+        (consequenceDurationMinutes as number) < 0 ||
+        (consequenceDurationMinutes as number) >
+          MAX_CONSEQUENCE_DURATION_MINUTES ||
+        (failConsequence &&
+          consequenceClearRule === "timed" &&
+          (consequenceDurationMinutes as number) < 1)
       ) {
         throw new PitchReviewError("invalid_duration", 400)
       }
@@ -174,11 +204,14 @@ export function parseReviewCommand(value: unknown): ReviewCommand {
           MAX_POLL_CHOICE_LENGTH
         ),
         durationMinutes: durationMinutes as number,
-        failConsequence: cleanOptionalText(
-          input.failConsequence,
-          "fail_consequence",
-          MAX_FAIL_CONSEQUENCE_LENGTH
-        ),
+        failConsequence,
+        consequenceClearRule: failConsequence
+          ? consequenceClearRule
+          : "through_next_mission",
+        consequenceDurationMinutes:
+          failConsequence && consequenceClearRule === "timed"
+            ? (consequenceDurationMinutes as number)
+            : 0,
       }
     }
     case "set_no_travel":
@@ -224,6 +257,10 @@ export function toPitchReviewItem(record: ReviewRecord): PitchReviewItem {
       record.durationMinutes ?? record.extraction?.durationMinutes ?? 10,
     riskFlags: record.extraction?.riskFlags ?? [],
     failConsequence: record.extraction?.failConsequence || null,
+    consequenceClearRule:
+      record.extraction?.consequenceClearRule ?? "through_next_mission",
+    consequenceDurationMinutes:
+      record.extraction?.consequenceDurationMinutes ?? 0,
     anywhere: isAnywhere(record),
     noTravel: record.noTravel === true,
     destination: record.destination ?? null,
@@ -416,6 +453,8 @@ export function transitionPitchReview(
         extraction: {
           ...record.extraction!,
           failConsequence: command.failConsequence,
+          consequenceClearRule: command.consequenceClearRule,
+          consequenceDurationMinutes: command.consequenceDurationMinutes,
         },
         reviewStatus: "pending_review",
         updatedAt: now,

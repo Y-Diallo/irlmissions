@@ -112,6 +112,8 @@ describe("owner pitch routes", () => {
           publicLabel: "Mystery challenge",
           durationMinutes: 0,
           failConsequence: "Do a silly dance",
+          consequenceClearRule: "through_next_mission",
+          consequenceDurationMinutes: 0,
         }),
       }),
       context

@@ -39,6 +39,17 @@ export function createFakePitchProviders(
               },
             ]
           : []
+        const consequence =
+          /\bif\s+(?:you|i|the streamer)\s+(?:fail|fails|lose|loses)\b\s*[:,]?\s*(.+)$/i
+            .exec(text)?.[1]
+            ?.trim() ?? ""
+        const consequenceMinutes = consequence
+          ? Number(
+              /\b(\d+)\s*(?:m|min|mins|minute|minutes)\b/i.exec(
+                consequence
+              )?.[1] ?? 0
+            )
+          : 0
         return {
           placeQuery: text,
           challenge: text.replaceAll(/\[[^\]]+\]/g, "").trim(),
@@ -47,6 +58,11 @@ export function createFakePitchProviders(
           ),
           durationMinutes: 10,
           riskFlags,
+          failConsequence: consequence,
+          consequenceClearRule: consequenceMinutes
+            ? ("timed" as const)
+            : ("through_next_mission" as const),
+          consequenceDurationMinutes: consequenceMinutes,
           anywhere: text.includes("[anywhere]"),
         }
       },

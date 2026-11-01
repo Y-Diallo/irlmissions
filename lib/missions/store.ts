@@ -4,9 +4,10 @@ import { eventSubStorageId } from "@/shared/eventsub"
 import { idleOverlay, missionOverlay } from "@/shared/overlay"
 import type { PollRecord } from "@/shared/polls"
 import {
-  carryActiveConsequence,
+  carryActiveConsequences,
   createMissionFromPick,
   MissionError,
+  payManualConsequence,
   toMissionOwnerView,
   transitionMission,
   type MissionAction,
@@ -64,7 +65,7 @@ export function createMissionStore(db: Firestore, tenantId: string) {
             )
           )
         }
-        const mission = carryActiveConsequence(
+        const mission = carryActiveConsequences(
           createMissionFromPick(
             {
               ...pitch.data(),
@@ -76,11 +77,13 @@ export function createMissionStore(db: Firestore, tenantId: string) {
             now,
             tie?.lockId
           ),
-          missionFrom(session.data())
+          missionFrom(session.data()),
+          now
         )
 
         if (tie) {
-          const { tiedRedemptionIds: _tied, ...rest } = tie
+          const rest: Partial<typeof tie> = { ...tie }
+          delete rest.tiedRedemptionIds
           tx.set(
             sessionRef,
             {
@@ -162,6 +165,18 @@ export function createMissionStore(db: Firestore, tenantId: string) {
           })
         }
         return toMissionOwnerView(next)
+      })
+    },
+
+    clearManualConsequence(consequenceId: string, now: number) {
+      return db.runTransaction(async (tx) => {
+        const session = await tx.get(sessionRef)
+        const current = missionFrom(session.data())
+        if (!current) throw new MissionError("mission_not_found", 404)
+        const next = payManualConsequence(current, consequenceId, now)
+        tx.set(sessionRef, { mission: next }, { merge: true })
+        tx.set(publicStateRef, missionOverlay(next, now))
+        return toMissionOwnerView(next, now)
       })
     },
   }

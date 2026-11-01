@@ -1,4 +1,5 @@
-import type { ConsequenceClearRule, MissionRecord } from "@/shared/missions"
+import { activeConsequences, type MissionRecord } from "@/shared/missions"
+import type { ConsequenceClearRule } from "@/shared/pitches/processor"
 import { withoutDashes, type PollRecord } from "@/shared/polls"
 
 type RevealedPlace = {
@@ -9,8 +10,13 @@ type RevealedPlace = {
 }
 
 type ConsequenceView = {
-  consequence?: string
-  consequenceClearRule?: ConsequenceClearRule
+  consequences?: Array<{
+    consequenceId: string
+    text: string
+    setBy: string
+    clearRule: ConsequenceClearRule
+    endsAt?: number
+  }>
 }
 
 export type OverlayProjection =
@@ -121,16 +127,21 @@ function revealedPlace(mission: MissionRecord): RevealedPlace {
   }
 }
 
-function activeConsequence(mission: MissionRecord): ConsequenceView {
-  return mission.activeConsequence
-    ? {
-        consequence: mission.activeConsequence.text,
-        consequenceClearRule: mission.activeConsequence.clearRule,
-      }
-    : {}
+function consequenceView(mission: MissionRecord, now: number): ConsequenceView {
+  const consequences = activeConsequences(mission, now).map((consequence) => ({
+    consequenceId: consequence.consequenceId,
+    text: consequence.text,
+    setBy: consequence.setBy,
+    clearRule: consequence.clearRule,
+    ...(consequence.endsAt ? { endsAt: consequence.endsAt } : {}),
+  }))
+  return consequences.length ? { consequences } : {}
 }
 
-export function missionOverlay(mission: MissionRecord): OverlayProjection {
+export function missionOverlay(
+  mission: MissionRecord,
+  now = mission.updatedAt
+): OverlayProjection {
   if (mission.status === "canceled") {
     return idleOverlay(mission.updatedAt)
   }
@@ -140,7 +151,7 @@ export function missionOverlay(mission: MissionRecord): OverlayProjection {
       updatedAt: mission.updatedAt,
       objective: mission.publicLabel,
       chosenBy: mission.viewerName ?? "Chat",
-      ...activeConsequence(mission),
+      ...consequenceView(mission, now),
     }
   }
   if (mission.status === "arrived") {
@@ -150,7 +161,7 @@ export function missionOverlay(mission: MissionRecord): OverlayProjection {
       updatedAt: mission.updatedAt,
       objective: mission.publicLabel,
       timerEndsAt: mission.timerEndsAt,
-      ...activeConsequence(mission),
+      ...consequenceView(mission, now),
       ...revealedPlace(mission),
     }
   }
@@ -158,7 +169,7 @@ export function missionOverlay(mission: MissionRecord): OverlayProjection {
     state: mission.status,
     updatedAt: mission.updatedAt,
     objective: mission.publicLabel,
-    ...activeConsequence(mission),
+    ...consequenceView(mission, now),
     ...revealedPlace(mission),
   }
 }
@@ -189,7 +200,10 @@ function text(value: unknown, maximum: number) {
 }
 
 // Rebuild an allowlisted response instead of returning Firestore data directly.
-export function toOverlayView(value: unknown): OverlayProjection {
+export function toOverlayView(
+  value: unknown,
+  now = Date.now()
+): OverlayProjection {
   const input = object(value)
   const updatedAt = timestamp(input.updatedAt)
   if (input.state === "idle") return { state: "idle", updatedAt }
@@ -233,13 +247,52 @@ export function toOverlayView(value: unknown): OverlayProjection {
     throw new OverlayError("invalid_overlay_projection")
   }
   const objective = text(input.objective, 25)
-  const consequence: ConsequenceView =
-    input.consequence === undefined
-      ? {}
-      : {
-          consequence: text(input.consequence, 80),
-          consequenceClearRule: "through_next_mission",
+  let consequence: ConsequenceView = {}
+  if (input.consequences !== undefined) {
+    if (!Array.isArray(input.consequences) || input.consequences.length > 20) {
+      throw new OverlayError("invalid_overlay_projection")
+    }
+    const consequences = input.consequences
+      .map((value) => {
+        const item = object(value)
+        const clearRule = item.clearRule
+        if (
+          clearRule !== "timed" &&
+          clearRule !== "at_next_stop" &&
+          clearRule !== "through_next_mission" &&
+          clearRule !== "manual"
+        ) {
+          throw new OverlayError("invalid_overlay_projection")
         }
+        const typedClearRule = clearRule as ConsequenceClearRule
+        const endsAt =
+          item.endsAt === undefined ? undefined : timestamp(item.endsAt)
+        if (clearRule === "timed" && endsAt === undefined) {
+          throw new OverlayError("invalid_overlay_projection")
+        }
+        return {
+          consequenceId: text(item.consequenceId, 512),
+          text: text(item.text, 80),
+          setBy: text(item.setBy, 25),
+          clearRule: typedClearRule,
+          ...(endsAt === undefined ? {} : { endsAt }),
+        }
+      })
+      .filter((item) => !item.endsAt || item.endsAt > now)
+    if (consequences.length) consequence = { consequences }
+  } else if (input.consequence !== undefined) {
+    // Read legacy projections until the next mission write replaces them.
+    consequence = {
+      consequences: [
+        {
+          consequenceId: `legacy:${updatedAt}`,
+          text: text(input.consequence, 80),
+          setBy: "Chat",
+          clearRule: "through_next_mission",
+        },
+      ],
+    }
+  }
   const place: RevealedPlace =
     input.placeName === undefined
       ? {}

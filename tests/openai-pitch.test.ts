@@ -26,6 +26,8 @@ const extraction = {
   durationMinutes: 10,
   riskFlags: [],
   failConsequence: "Eat a lemon",
+  consequenceClearRule: "through_next_mission",
+  consequenceDurationMinutes: 0,
   anywhere: false,
 }
 
@@ -65,6 +67,9 @@ describe("OpenAI pitch extractor", () => {
     )
     expect(request.instructions).toContain(
       "filming or touching without consent"
+    )
+    expect(request.instructions).toContain(
+      "When the wording is ambiguous, default to through_next_mission"
     )
     expect(
       request.text.format.schema.properties.riskFlags.description

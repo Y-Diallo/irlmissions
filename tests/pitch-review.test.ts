@@ -66,6 +66,8 @@ describe("pitch review transitions", () => {
         publicLabel: "Mystery speed challenge",
         durationMinutes: 12,
         failConsequence: "Sing a silly song",
+        consequenceClearRule: "through_next_mission",
+        consequenceDurationMinutes: 0,
       },
       now
     )
@@ -95,11 +97,16 @@ describe("pitch review transitions", () => {
           publicLabel: "Ten-item challenge",
           durationMinutes: 10,
           failConsequence: "Sing a silly song",
+          consequenceClearRule: "manual",
+          consequenceDurationMinutes: 0,
         },
         now
       ).values
     ).toMatchObject({
-      extraction: { failConsequence: "Sing a silly song" },
+      extraction: {
+        failConsequence: "Sing a silly song",
+        consequenceClearRule: "manual",
+      },
       reviewStatus: "pending_review",
     })
     expect(
@@ -110,6 +117,8 @@ describe("pitch review transitions", () => {
           publicLabel: "Ten-item challenge",
           durationMinutes: 10,
           failConsequence: "",
+          consequenceClearRule: "timed",
+          consequenceDurationMinutes: 10,
         },
         now
       ).values
@@ -397,12 +406,16 @@ describe("pitch review transitions", () => {
         publicLabel: " Mystery objective ",
         durationMinutes: 10,
         failConsequence: "  Wear a funny hat  ",
+        consequenceClearRule: "timed",
+        consequenceDurationMinutes: 10,
       })
     ).toEqual({
       action: "edit_details",
       publicLabel: "Mystery objective",
       durationMinutes: 10,
       failConsequence: "Wear a funny hat",
+      consequenceClearRule: "timed",
+      consequenceDurationMinutes: 10,
     })
     const item = toPitchReviewItem(
       record({ processingWarnings: ["stale_location"] })

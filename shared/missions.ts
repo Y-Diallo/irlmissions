@@ -1,15 +1,21 @@
-import type { PlaceCandidate, WalkingRoute } from "@/shared/pitches/processor"
+import type {
+  ConsequenceClearRule,
+  PlaceCandidate,
+  WalkingRoute,
+} from "@/shared/pitches/processor"
 import type { PollRecord } from "@/shared/polls"
 
 export type MissionStatus =
   "heading" | "arrived" | "completed" | "failed" | "canceled"
 
-export type ConsequenceClearRule = "through_next_mission"
-
 export type ActiveConsequence = {
+  consequenceId: string
   text: string
   clearRule: ConsequenceClearRule
   sourceMissionId: string
+  setBy: string
+  activatedAt: number
+  endsAt?: number
 }
 
 export type MissionRecord = {
@@ -22,8 +28,16 @@ export type MissionRecord = {
   viewerName?: string
   /** Viewer's stated penalty, activated on the overlay if the mission fails. */
   failConsequence?: string
-  /** A failed mission's consequence, carried until the following outcome. */
-  activeConsequence?: ActiveConsequence
+  failConsequenceClearRule?: ConsequenceClearRule
+  failConsequenceDurationMinutes?: number
+  /** Owed consequences can overlap until each one's rule clears it. */
+  activeConsequences?: ActiveConsequence[]
+  /** Legacy single-consequence shape, migrated when this session advances. */
+  activeConsequence?: {
+    text: string
+    clearRule: "through_next_mission"
+    sourceMissionId: string
+  }
   status: MissionStatus
   publicLabel: string
   durationMinutes: number
@@ -188,7 +202,23 @@ function missionFromPitch(
     throw new MissionError("invalid_mission_details", 500)
   }
   const viewerName = object(pitch.viewer)?.name
-  const failConsequence = object(pitch.extraction)?.failConsequence
+  const extraction = object(pitch.extraction)
+  const failConsequence = extraction?.failConsequence
+  const requestedClearRule = extraction?.consequenceClearRule
+  const failConsequenceClearRule: ConsequenceClearRule =
+    requestedClearRule === "timed" ||
+    requestedClearRule === "at_next_stop" ||
+    requestedClearRule === "through_next_mission" ||
+    requestedClearRule === "manual"
+      ? requestedClearRule
+      : "through_next_mission"
+  const requestedConsequenceDuration = extraction?.consequenceDurationMinutes
+  const failConsequenceDurationMinutes =
+    failConsequenceClearRule === "timed" &&
+    Number.isInteger(requestedConsequenceDuration) &&
+    (requestedConsequenceDuration as number) > 0
+      ? (requestedConsequenceDuration as number)
+      : 0
   // An anywhere mission has nowhere to travel, so its timer starts at once.
   const anywhere =
     object(pitch.extraction)?.anywhere === true || pitch.noTravel === true
@@ -207,7 +237,15 @@ function missionFromPitch(
       }
   return {
     ...(typeof failConsequence === "string" && failConsequence.trim()
-      ? { failConsequence: failConsequence.trim().slice(0, 80) }
+      ? {
+          failConsequence: failConsequence.trim().slice(0, 80),
+          failConsequenceClearRule:
+            failConsequenceClearRule === "timed" &&
+            !failConsequenceDurationMinutes
+              ? "through_next_mission"
+              : failConsequenceClearRule,
+          failConsequenceDurationMinutes,
+        }
       : {}),
     missionId,
     lockId: `mission:${missionId}`,
@@ -224,27 +262,58 @@ function missionFromPitch(
   }
 }
 
-// Carry a consequence onto the next mission. The fallback supports sessions
-// that failed before active consequences were introduced.
-export function carryActiveConsequence(
+export function activeConsequences(record: MissionRecord, now: number) {
+  const current = (record.activeConsequences ?? []).filter(
+    (consequence) => !consequence.endsAt || consequence.endsAt > now
+  )
+  if (current.length || !record.activeConsequence?.text.trim()) return current
+  return [
+    {
+      consequenceId: `legacy:${record.activeConsequence.sourceMissionId}`,
+      text: record.activeConsequence.text.trim().slice(0, 80),
+      clearRule: "through_next_mission" as const,
+      sourceMissionId: record.activeConsequence.sourceMissionId,
+      setBy: record.viewerName ?? "Chat",
+      activatedAt: record.outcomeAt ?? record.updatedAt,
+    },
+  ]
+}
+
+// Carry every still-owed consequence onto the next mission. An anywhere
+// mission is already at its first stop, so at-next-stop debts clear at once.
+export function carryActiveConsequences(
   next: MissionRecord,
-  previous: MissionRecord | null
+  previous: MissionRecord | null,
+  now: number
 ): MissionRecord {
   if (!previous) return next
-  const active = previous.activeConsequence
-  if (active?.text.trim()) {
-    return { ...next, activeConsequence: active }
+  const carried = activeConsequences(previous, now).filter(
+    (consequence) =>
+      next.status !== "arrived" || consequence.clearRule !== "at_next_stop"
+  )
+  return carried.length ? { ...next, activeConsequences: carried } : next
+}
+
+export function payManualConsequence(
+  record: MissionRecord,
+  consequenceId: string,
+  now: number
+) {
+  const current = activeConsequences(record, now)
+  const target = current.find(
+    (consequence) => consequence.consequenceId === consequenceId
+  )
+  if (!target) throw new MissionError("consequence_not_found", 404)
+  if (target.clearRule !== "manual") {
+    throw new MissionError("consequence_not_manual")
   }
-  if (previous.status === "failed" && previous.failConsequence?.trim()) {
-    return {
-      ...next,
-      activeConsequence: {
-        text: previous.failConsequence.trim().slice(0, 80),
-        clearRule: "through_next_mission",
-        sourceMissionId: previous.missionId,
-      },
-    }
-  }
+  const next = { ...record, updatedAt: now }
+  delete next.activeConsequence
+  const remaining = current.filter(
+    (consequence) => consequence.consequenceId !== consequenceId
+  )
+  if (remaining.length) next.activeConsequences = remaining
+  else delete next.activeConsequences
   return next
 }
 
@@ -270,73 +339,99 @@ export function transitionMission(
   action: MissionAction,
   now: number
 ): MissionRecord {
+  const current = { ...record }
+  delete current.activeConsequence
+  const owed = activeConsequences(record, now)
+  if (owed.length) current.activeConsequences = owed
+  else delete current.activeConsequences
   if (action === "cancel") {
-    if (record.status === "canceled") return record
-    if (record.status !== "heading") {
+    if (current.status === "canceled") return record
+    if (current.status !== "heading") {
       throw new MissionError("mission_not_cancelable")
     }
     return {
-      ...record,
+      ...current,
       status: "canceled",
       outcomeAt: now,
       updatedAt: now,
     }
   }
   if (action === "arrive") {
-    if (record.status === "arrived") return record
-    if (record.status !== "heading") throw new MissionError("mission_finished")
-    return {
-      ...record,
+    if (current.status === "arrived") return record
+    if (current.status !== "heading") throw new MissionError("mission_finished")
+    const afterArrival = owed.filter(
+      (consequence) => consequence.clearRule !== "at_next_stop"
+    )
+    const next: MissionRecord = {
+      ...current,
       status: "arrived",
       arrivedAt: now,
-      timerEndsAt: now + record.durationMinutes * 60_000,
+      timerEndsAt: now + current.durationMinutes * 60_000,
       // The owner's tap reveals the place on the overlay, same as GPS arrival.
-      destinationRevealedAt: record.destinationRevealedAt ?? now,
+      destinationRevealedAt: current.destinationRevealedAt ?? now,
       updatedAt: now,
     }
+    if (afterArrival.length) next.activeConsequences = afterArrival
+    else delete next.activeConsequences
+    return next
   }
   if (action === "extend") {
-    if (record.status === "heading") {
+    if (current.status === "heading") {
       return {
-        ...record,
-        durationMinutes: record.durationMinutes + EXTEND_MS / 60_000,
+        ...current,
+        durationMinutes: current.durationMinutes + EXTEND_MS / 60_000,
         updatedAt: now,
       }
     }
-    if (record.status !== "arrived" || !record.timerEndsAt) {
+    if (current.status !== "arrived" || !current.timerEndsAt) {
       throw new MissionError("mission_finished")
     }
     // An elapsed timer restarts from now rather than from the past end time.
     return {
-      ...record,
-      timerEndsAt: Math.max(record.timerEndsAt, now) + EXTEND_MS,
+      ...current,
+      timerEndsAt: Math.max(current.timerEndsAt, now) + EXTEND_MS,
       updatedAt: now,
     }
   }
   const target = action === "complete" ? "completed" : "failed"
-  if (record.status === target) return record
+  if (current.status === target) return record
   if (
-    record.status === "completed" ||
-    record.status === "failed" ||
-    record.status === "canceled"
+    current.status === "completed" ||
+    current.status === "failed" ||
+    current.status === "canceled"
   ) {
     throw new MissionError("mission_finished")
   }
-  if (record.status !== "arrived") {
+  if (current.status !== "arrived") {
     throw new MissionError("mission_not_arrived")
   }
-  const withoutConsequence = { ...record }
-  delete withoutConsequence.activeConsequence
+  const remaining = owed.filter(
+    (consequence) => consequence.clearRule !== "through_next_mission"
+  )
+  const activated =
+    target === "failed" && current.failConsequence
+      ? ({
+          consequenceId: `mission:${current.missionId}`,
+          text: current.failConsequence,
+          clearRule: current.failConsequenceClearRule ?? "through_next_mission",
+          sourceMissionId: current.missionId,
+          setBy: current.viewerName ?? "Chat",
+          activatedAt: now,
+          ...((current.failConsequenceClearRule ?? "through_next_mission") ===
+            "timed" && (current.failConsequenceDurationMinutes ?? 0) > 0
+            ? {
+                endsAt: now + current.failConsequenceDurationMinutes! * 60_000,
+              }
+            : {}),
+        } satisfies ActiveConsequence)
+      : null
+  const nextConsequences = [...remaining, ...(activated ? [activated] : [])]
+  const withoutConsequences = { ...current }
+  delete withoutConsequences.activeConsequences
   return {
-    ...withoutConsequence,
-    ...(target === "failed" && record.failConsequence
-      ? {
-          activeConsequence: {
-            text: record.failConsequence,
-            clearRule: "through_next_mission" as const,
-            sourceMissionId: record.missionId,
-          },
-        }
+    ...withoutConsequences,
+    ...(nextConsequences.length
+      ? { activeConsequences: nextConsequences }
       : {}),
     status: target,
     outcomeAt: now,
@@ -369,11 +464,19 @@ export function missionNavigation(
   }
 }
 
-export function toMissionOwnerView(record: MissionRecord): MissionOwnerView {
+export function toMissionOwnerView(
+  record: MissionRecord,
+  now = Date.now()
+): MissionOwnerView {
+  const current = { ...record }
+  delete current.activeConsequence
+  const owed = activeConsequences(record, now)
+  if (owed.length) current.activeConsequences = owed
+  else delete current.activeConsequences
   return {
-    ...record,
-    navigation: record.destination
-      ? missionNavigation(record.destination, record.walkingRoute?.mode)
+    ...current,
+    navigation: current.destination
+      ? missionNavigation(current.destination, current.walkingRoute?.mode)
       : null,
   }
 }

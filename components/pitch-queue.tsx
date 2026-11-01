@@ -19,7 +19,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { PitchReviewItem, ReviewCommand } from "@/shared/pitches/review"
-import type { TravelMode } from "@/shared/pitches/processor"
+import type {
+  ConsequenceClearRule,
+  TravelMode,
+} from "@/shared/pitches/processor"
 import { DEFAULT_POLL_DURATION_SECONDS, type PollRecord } from "@/shared/polls"
 import type { MissionAction, MissionOwnerView } from "@/shared/missions"
 
@@ -36,6 +39,8 @@ const errors: Record<string, string> = {
   public_label_reveals_destination:
     "The public label includes the street address. Remove it before approving.",
   invalid_public_label: "Public poll labels must be 1–25 characters.",
+  invalid_consequence_rule: "Choose how this consequence clears.",
+  invalid_duration: "Enter a valid mission or consequence duration.",
   invalid_poll_label: "Each Twitch poll choice must be 25 characters or less.",
   duplicate_poll_labels: "Poll choices must have different public labels.",
   poll_in_progress: "A poll is already being created or is live.",
@@ -55,6 +60,8 @@ const errors: Record<string, string> = {
   mission_not_arrived:
     "Mark the destination as arrived before choosing an outcome.",
   mission_finished: "This mission already has an outcome.",
+  consequence_not_found: "That consequence has already cleared.",
+  consequence_not_manual: "This consequence clears automatically.",
   mission_not_cancelable:
     "This mission has already started. Mark it complete or failed instead.",
   stream_mission_needs_outcome:
@@ -131,6 +138,11 @@ function PitchCard({
   const [failConsequence, setFailConsequence] = useState(
     pitch.failConsequence ?? ""
   )
+  const [consequenceClearRule, setConsequenceClearRule] =
+    useState<ConsequenceClearRule>(pitch.consequenceClearRule)
+  const [consequenceDuration, setConsequenceDuration] = useState(
+    String(pitch.consequenceDurationMinutes)
+  )
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
   const [confirmRemove, setConfirmRemove] = useState(false)
@@ -139,6 +151,10 @@ function PitchCard({
   const serverPublicLabel = useRef(pitch.publicLabel)
   const serverDuration = useRef(String(pitch.durationMinutes))
   const serverFailConsequence = useRef(pitch.failConsequence ?? "")
+  const serverConsequenceClearRule = useRef(pitch.consequenceClearRule)
+  const serverConsequenceDuration = useRef(
+    String(pitch.consequenceDurationMinutes)
+  )
 
   useEffect(() => {
     const previous = serverRawText.current
@@ -167,6 +183,21 @@ function PitchCard({
     serverFailConsequence.current = next
     setFailConsequence((current) => (current === previous ? next : current))
   }, [pitch.failConsequence])
+
+  useEffect(() => {
+    const previous = serverConsequenceClearRule.current
+    serverConsequenceClearRule.current = pitch.consequenceClearRule
+    setConsequenceClearRule((current) =>
+      current === previous ? pitch.consequenceClearRule : current
+    )
+  }, [pitch.consequenceClearRule])
+
+  useEffect(() => {
+    const next = String(pitch.consequenceDurationMinutes)
+    const previous = serverConsequenceDuration.current
+    serverConsequenceDuration.current = next
+    setConsequenceDuration((current) => (current === previous ? next : current))
+  }, [pitch.consequenceDurationMinutes])
 
   useEffect(() => {
     if (
@@ -200,6 +231,9 @@ function PitchCard({
     publicLabel,
     durationMinutes: Number(duration),
     failConsequence,
+    consequenceClearRule,
+    consequenceDurationMinutes:
+      consequenceClearRule === "timed" ? Number(consequenceDuration) : 0,
   })
   const reviewed =
     pitch.reviewStatus === "pending_review" || pitch.reviewStatus === "approved"
@@ -492,11 +526,57 @@ function PitchCard({
                 onChange={(event) => setFailConsequence(event.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                You can replace the generated consequence or leave it blank. If
-                approved, it clears automatically when the following mission is
-                completed or failed.
+                You can replace the generated consequence or leave it blank.
               </p>
             </div>
+            {failConsequence.trim() && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor={`consequence-rule-${pitch.redemptionId}`}>
+                    Clears when
+                  </Label>
+                  <select
+                    id={`consequence-rule-${pitch.redemptionId}`}
+                    value={consequenceClearRule}
+                    disabled={busy || pitch.locked}
+                    className="min-h-14 w-full rounded-md border border-input bg-background px-3 text-base"
+                    onChange={(event) =>
+                      setConsequenceClearRule(
+                        event.target.value as ConsequenceClearRule
+                      )
+                    }
+                  >
+                    <option value="timed">Timer ends</option>
+                    <option value="at_next_stop">Next mission arrives</option>
+                    <option value="through_next_mission">
+                      Next mission completes or fails
+                    </option>
+                    <option value="manual">I mark it paid</option>
+                  </select>
+                </div>
+                {consequenceClearRule === "timed" && (
+                  <div className="grid gap-2">
+                    <Label
+                      htmlFor={`consequence-duration-${pitch.redemptionId}`}
+                    >
+                      Consequence minutes
+                    </Label>
+                    <Input
+                      id={`consequence-duration-${pitch.redemptionId}`}
+                      type="number"
+                      min={1}
+                      max={1440}
+                      value={consequenceDuration}
+                      disabled={busy || pitch.locked}
+                      className="min-h-14 text-base"
+                      onChange={(event) =>
+                        setConsequenceDuration(event.target.value)
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -879,6 +959,26 @@ export function PitchQueue() {
     await refresh()
   }
 
+  async function payConsequence(consequenceId: string) {
+    const response = await fetch("/api/missions", {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${await token()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ consequenceId }),
+    })
+    const result = await response.json()
+    if (!response.ok) {
+      const code = result.error ?? "unavailable"
+      throw new Error(
+        errors[code] ?? "Could not mark the consequence paid. Try again."
+      )
+    }
+    setMission(result.mission)
+    await refresh()
+  }
+
   const pollInProgress =
     poll &&
     ["creating", "create_unknown", "active", "tie"].includes(poll.status)
@@ -1074,7 +1174,11 @@ export function PitchQueue() {
       )}
       {signedIn && mission && (
         <div className="order-1">
-          <MissionCard mission={mission} onAction={missionAction} />
+          <MissionCard
+            mission={mission}
+            onAction={missionAction}
+            onPayConsequence={payConsequence}
+          />
         </div>
       )}
       {signedIn && (

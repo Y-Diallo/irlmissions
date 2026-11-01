@@ -145,8 +145,18 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
       const store = createAuthStore(getAdminFirestore(admin))
       await store.saveTokens(credentials)
       const claims = await Promise.all([
-        store.claimRefresh("42", credentials.accessToken, "lease-a", Date.now()),
-        store.claimRefresh("42", credentials.accessToken, "lease-b", Date.now()),
+        store.claimRefresh(
+          "42",
+          credentials.accessToken,
+          "lease-a",
+          Date.now()
+        ),
+        store.claimRefresh(
+          "42",
+          credentials.accessToken,
+          "lease-b",
+          Date.now()
+        ),
       ])
       expect(claims.filter(Boolean)).toHaveLength(1)
       const winner = claims[0] ? "lease-a" : "lease-b"
@@ -242,7 +252,12 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
           sourceMessageId: receipt.messageId,
           broadcasterId,
           viewer: { id: "viewer", login: "viewer", name: "Viewer" },
-          reward: { id: `reward-${broadcasterId}`, title: "Pitch", prompt: "", cost: 10 },
+          reward: {
+            id: `reward-${broadcasterId}`,
+            title: "Pitch",
+            prompt: "",
+            cost: 10,
+          },
           rawText: "Visit the park",
           redeemedAt: new Date().toISOString(),
           redemptionStatus: "unfulfilled",
@@ -252,21 +267,25 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
           updatedAt: Date.now(),
         },
       })
-      await expect(createEventSubStore(db, "42").save(pitch("42"))).resolves.toBe(
-        "created"
-      )
-      await expect(createEventSubStore(db, "99").save(pitch("99"))).resolves.toBe(
-        "created"
-      )
+      await expect(
+        createEventSubStore(db, "42").save(pitch("42"))
+      ).resolves.toBe("created")
+      await expect(
+        createEventSubStore(db, "99").save(pitch("99"))
+      ).resolves.toBe("created")
 
       const access = createOverlayAccessStore(db)
       const first = await access.rotate("42", Date.now())
       const second = await access.rotate("99", Date.now())
-      await expect(access.resolve(first.overlayId, first.secret)).resolves.toBe("42")
-      await expect(access.resolve(second.overlayId, second.secret)).resolves.toBe("99")
-      await expect(access.resolve(first.overlayId, second.secret)).rejects.toThrow(
-        "unauthorized"
+      await expect(access.resolve(first.overlayId, first.secret)).resolves.toBe(
+        "42"
       )
+      await expect(
+        access.resolve(second.overlayId, second.secret)
+      ).resolves.toBe("99")
+      await expect(
+        access.resolve(first.overlayId, second.secret)
+      ).rejects.toThrow("unauthorized")
     })
 
     it("claims a pitch once and commits only for the active processing lease", async () => {
@@ -325,9 +344,7 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
       await expect(store.reject(winner, "no_public_place", 3000)).resolves.toBe(
         true
       )
-      const saved = (
-        await db.doc(`owners/42/pitches/${pitchId}`).get()
-      ).data()
+      const saved = (await db.doc(`owners/42/pitches/${pitchId}`).get()).data()
       expect(saved).toMatchObject({
         reviewStatus: "rejected",
         rejectionReason: "no_public_place",
@@ -430,9 +447,7 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
       const store = createPitchReviewStore(db, "42")
 
       await store.update(redemptionId, { action: "approve" }, 2000)
-      let saved = (
-        await db.doc(`owners/42/pitches/${pitchId}`).get()
-      ).data()
+      let saved = (await db.doc(`owners/42/pitches/${pitchId}`).get()).data()
       expect(saved).toMatchObject({
         reviewStatus: "approved",
         approvedAt: 2000,
@@ -445,6 +460,8 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
           publicLabel: "Edited mystery objective",
           durationMinutes: 12,
           failConsequence: "Do a silly dance",
+          consequenceClearRule: "through_next_mission",
+          consequenceDurationMinutes: 0,
         },
         3000
       )

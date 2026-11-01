@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   requireOwner: vi.fn(),
   read: vi.fn(),
   act: vi.fn(),
+  clearManualConsequence: vi.fn(),
 }))
 
 vi.mock("@/lib/auth/server", () => ({
@@ -14,10 +15,14 @@ vi.mock("@/lib/firebase/admin", () => ({
   getServerFirebase: () => ({ db: {} }),
 }))
 vi.mock("@/lib/missions/store", () => ({
-  createMissionStore: () => ({ read: mocks.read, act: mocks.act }),
+  createMissionStore: () => ({
+    read: mocks.read,
+    act: mocks.act,
+    clearManualConsequence: mocks.clearManualConsequence,
+  }),
 }))
 
-import { GET, PATCH } from "@/app/api/missions/route"
+import { DELETE, GET, PATCH } from "@/app/api/missions/route"
 
 const url = "http://localhost:3000/api/missions"
 
@@ -70,11 +75,32 @@ describe("owner mission routes", () => {
     expect(mocks.act).not.toHaveBeenCalled()
   })
 
+  it("marks a manual consequence paid with a server timestamp", async () => {
+    mocks.requireOwner.mockResolvedValue({ uid: "twitch:42", tenantId: "42" })
+    mocks.clearManualConsequence.mockResolvedValue({ activeConsequences: [] })
+    const response = await DELETE(
+      new Request(url, {
+        method: "DELETE",
+        headers: {
+          authorization: "Bearer owner",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ consequenceId: "consequence-1" }),
+      })
+    )
+    expect(response.status).toBe(200)
+    expect(mocks.clearManualConsequence).toHaveBeenCalledWith(
+      "consequence-1",
+      expect.any(Number)
+    )
+  })
+
   it("never reads or mutates missions for another user", async () => {
     mocks.requireOwner.mockRejectedValue(new AuthError("unauthorized", 401))
     const response = await GET(new Request(url))
     expect(response.status).toBe(401)
     expect(mocks.read).not.toHaveBeenCalled()
     expect(mocks.act).not.toHaveBeenCalled()
+    expect(mocks.clearManualConsequence).not.toHaveBeenCalled()
   })
 })

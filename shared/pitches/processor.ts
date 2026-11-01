@@ -10,6 +10,8 @@ const MAX_AUTOMATIC_ATTEMPTS = 5
 export type Coordinates = { latitude: number; longitude: number }
 export type ProcessingWarning = "stale_location"
 export type TravelMode = "walk" | "transit" | "drive"
+export type ConsequenceClearRule =
+  "timed" | "at_next_stop" | "through_next_mission" | "manual"
 
 export type ProcessingPitch = {
   redemptionId: string
@@ -49,11 +51,16 @@ export type PitchExtraction = {
   riskFlags: RiskFlag[]
   /** What the viewer said should happen on failure; "" when none. */
   failConsequence?: string
+  /** Defaults to through_next_mission when the wording is ambiguous. */
+  consequenceClearRule?: ConsequenceClearRule
+  /** Required only for timed consequences; zero for every other rule. */
+  consequenceDurationMinutes?: number
   /** True when the challenge can be done anywhere, with no place to find. */
   anywhere?: boolean
 }
 
 export const MAX_FAIL_CONSEQUENCE_LENGTH = 80
+export const MAX_CONSEQUENCE_DURATION_MINUTES = 24 * 60
 
 export type PlaceCandidate = Coordinates & {
   placeId: string
@@ -266,6 +273,29 @@ export function validateExtraction(value: PitchExtraction): PitchExtraction {
     }
   })
   const anywhere = value.anywhere === true
+  const failConsequence = fitConsequence(value.failConsequence)
+  const clearRules = new Set<ConsequenceClearRule>([
+    "timed",
+    "at_next_stop",
+    "through_next_mission",
+    "manual",
+  ])
+  const consequenceClearRule = failConsequence
+    ? clearRules.has(value.consequenceClearRule as ConsequenceClearRule)
+      ? (value.consequenceClearRule as ConsequenceClearRule)
+      : "through_next_mission"
+    : "through_next_mission"
+  const suppliedConsequenceDuration = value.consequenceDurationMinutes ?? 0
+  if (
+    !Number.isInteger(suppliedConsequenceDuration) ||
+    suppliedConsequenceDuration < 0 ||
+    suppliedConsequenceDuration > MAX_CONSEQUENCE_DURATION_MINUTES ||
+    (failConsequence &&
+      consequenceClearRule === "timed" &&
+      suppliedConsequenceDuration < 1)
+  ) {
+    throw new ProcessingError("invalid_extraction")
+  }
   return {
     // An anywhere pitch has nothing to search for.
     placeQuery: anywhere
@@ -283,7 +313,10 @@ export function validateExtraction(value: PitchExtraction): PitchExtraction {
     ),
     durationMinutes,
     riskFlags,
-    failConsequence: fitConsequence(value.failConsequence),
+    failConsequence,
+    consequenceClearRule,
+    consequenceDurationMinutes:
+      consequenceClearRule === "timed" ? suppliedConsequenceDuration : 0,
     anywhere,
   }
 }
@@ -307,6 +340,8 @@ function fallbackExtraction(
     publicLabelSuggestion: fitPollLabel(text),
     durationMinutes: defaultDurationMinutes,
     riskFlags: [],
+    consequenceClearRule: "through_next_mission",
+    consequenceDurationMinutes: 0,
   }
 }
 

@@ -31,9 +31,7 @@ export async function GET(request: Request) {
       import("@/lib/firebase/admin"),
       import("@/lib/missions/store"),
     ])
-    const owner = await requireServerOwner(
-      request.headers.get("authorization")
-    )
+    const owner = await requireServerOwner(request.headers.get("authorization"))
     const mission = await createMissionStore(
       getServerFirebase().db,
       owner.tenantId
@@ -56,9 +54,7 @@ export async function POST(request: Request) {
       import("@/lib/firebase/admin"),
       import("@/lib/missions/store"),
     ])
-    const owner = await requireServerOwner(
-      request.headers.get("authorization")
-    )
+    const owner = await requireServerOwner(request.headers.get("authorization"))
     const body = (await request.json()) as Record<string, unknown> | null
     const redemptionId = body?.redemptionId
     if (
@@ -90,14 +86,43 @@ export async function PATCH(request: Request) {
       import("@/lib/firebase/admin"),
       import("@/lib/missions/store"),
     ])
-    const owner = await requireServerOwner(
-      request.headers.get("authorization")
-    )
+    const owner = await requireServerOwner(request.headers.get("authorization"))
     const action = parseMissionAction(await request.json())
     const mission = await createMissionStore(
       getServerFirebase().db,
       owner.tenantId
     ).act(action, Date.now())
+    return NextResponse.json({ mission }, { headers: NO_STORE })
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const [
+      { requireServerOwner },
+      { getServerFirebase },
+      { createMissionStore },
+    ] = await Promise.all([
+      import("@/lib/auth/server"),
+      import("@/lib/firebase/admin"),
+      import("@/lib/missions/store"),
+    ])
+    const owner = await requireServerOwner(request.headers.get("authorization"))
+    const body = (await request.json()) as Record<string, unknown> | null
+    const consequenceId = body?.consequenceId
+    if (
+      typeof consequenceId !== "string" ||
+      !consequenceId ||
+      consequenceId.length > 512
+    ) {
+      throw new MissionError("invalid_consequence_id", 400)
+    }
+    const mission = await createMissionStore(
+      getServerFirebase().db,
+      owner.tenantId
+    ).clearManualConsequence(consequenceId, Date.now())
     return NextResponse.json({ mission }, { headers: NO_STORE })
   } catch (error) {
     return failure(error)
