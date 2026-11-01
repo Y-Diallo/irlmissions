@@ -178,6 +178,15 @@ export function SetupConsole() {
     }
   }
 
+  async function copyOverlayUrl(label: string, url: string) {
+    try {
+      await navigator.clipboard.writeText(url)
+      setMessage(`${label} URL copied.`)
+    } catch {
+      setMessage(`Could not copy the ${label.toLowerCase()} URL.`)
+    }
+  }
+
   const settings = view?.settings ?? {}
   const base =
     settings.baseZone && typeof settings.baseZone === "object"
@@ -470,15 +479,37 @@ export function SetupConsole() {
           <div className="mt-3 space-y-3">
             <div>
               <p className="mb-1 text-sm font-medium">Objectives overlay</p>
-              <p className="rounded bg-muted p-3 font-mono text-sm break-all">
-                {overlayUrl}
-              </p>
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <p className="rounded bg-muted p-3 font-mono text-sm break-all">
+                  {overlayUrl}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-12 w-full sm:w-auto"
+                  onClick={() =>
+                    void copyOverlayUrl("Objectives overlay", overlayUrl)
+                  }
+                >
+                  Copy URL
+                </Button>
+              </div>
             </div>
             <div>
               <p className="mb-1 text-sm font-medium">Optional live map</p>
-              <p className="rounded bg-muted p-3 font-mono text-sm break-all">
-                {mapUrl}
-              </p>
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <p className="rounded bg-muted p-3 font-mono text-sm break-all">
+                  {mapUrl}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-12 w-full sm:w-auto"
+                  onClick={() => void copyOverlayUrl("Live map", mapUrl)}
+                >
+                  Copy URL
+                </Button>
+              </div>
             </div>
           </div>
         )}
