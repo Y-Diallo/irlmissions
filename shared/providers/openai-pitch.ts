@@ -53,8 +53,6 @@ const schema = {
     },
     publicLabelSuggestion: {
       type: "string",
-      minLength: 1,
-      maxLength: 25,
       description:
         "A complete, success-oriented Twitch objective of at most 25 characters. Remove filler such as go to, challenge a stranger, and conjunctions; keep the destination category or safe chain name plus the core activity. Use an action that describes success: when losing triggers the consequence, use Win rather than Play. Example: \"Win Tic-Tac-Toe at a Gym\". Never end with a dangling word such as and, at, to, or with. Omit exact addresses and local destination names.",
     },
@@ -89,7 +87,14 @@ function outputText(payload: unknown) {
   }
   const response = payload as Record<string, unknown>
   if (response.status !== "completed" || !Array.isArray(response.output)) {
-    throw new Error("OpenAI response was not completed")
+    const incomplete = response.incomplete_details
+    const reason =
+      incomplete && typeof incomplete === "object"
+        ? (incomplete as Record<string, unknown>).reason
+        : undefined
+    throw new Error(
+      `OpenAI response was not completed${typeof reason === "string" ? `: ${reason}` : ""}`
+    )
   }
   const texts: string[] = []
   for (const item of response.output) {
@@ -149,7 +154,7 @@ export function createOpenAIPitchExtractor(
             body: JSON.stringify({
               model: config.model,
               store: false,
-              max_output_tokens: 600,
+              max_output_tokens: 1000,
               instructions:
                 "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. A verb like go, walk, run, explore, or trick-or-treat is not a destination: set anywhere=true unless the viewer explicitly names a place or requests a kind of place. Named public businesses, attractions, markets, parks, neighborhoods, districts, and cities are valid destinations. Flag dangerous, illegal, harassing, coercive, or otherwise concerning activity for human review, including any requested failure consequence. Preserve an explicitly viewer-provided consequence and flag it when concerning so the owner can decide. If the viewer did not provide a consequence, return an empty string; never invent one. The public label is a poll choice of at most 25 characters that plainly restates the viewer's request. Do not make it vague or mysterious. Big chain names are fine because they don't reveal which location; leave out exact addresses and local destination names before arrival.",
               input: text,
@@ -165,7 +170,34 @@ export function createOpenAIPitchExtractor(
             signal: controller.signal,
           }
         )
-        if (!response.ok) throw new Error("OpenAI extraction failed")
+        if (!response.ok) {
+          const failure = (await response.json().catch(() => null)) as Record<
+            string,
+            unknown
+          > | null
+          const details =
+            failure?.error && typeof failure.error === "object"
+              ? (failure.error as Record<string, unknown>)
+              : null
+          console.error(
+            JSON.stringify({
+              severity: "ERROR",
+              event: "openai_pitch_extraction_failed",
+              message: "OpenAI pitch extraction request failed",
+              httpStatus: response.status,
+              ...(typeof details?.type === "string"
+                ? { providerType: details.type }
+                : {}),
+              ...(typeof details?.code === "string"
+                ? { providerCode: details.code }
+                : {}),
+              ...(typeof details?.message === "string"
+                ? { providerMessage: details.message.slice(0, 500) }
+                : {}),
+            })
+          )
+          throw new Error("OpenAI extraction failed")
+        }
         const parsed = JSON.parse(
           outputText(await response.json())
         ) as PitchExtraction
