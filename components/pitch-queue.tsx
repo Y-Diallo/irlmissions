@@ -782,9 +782,6 @@ export function PitchQueue() {
     String(DEFAULT_POLL_DURATION_SECONDS)
   )
   const [modeBusy, setModeBusy] = useState(false)
-  const [endStreamBusy, setEndStreamBusy] = useState(false)
-  const [confirmEndStream, setConfirmEndStream] = useState(false)
-  const [endStreamMessage, setEndStreamMessage] = useState("")
 
   async function toggleNoTravelMode(enabled: boolean) {
     setModeBusy(true)
@@ -1154,42 +1151,6 @@ export function PitchQueue() {
     await refresh()
   }
 
-  async function endStream() {
-    if (!confirmEndStream) {
-      setConfirmEndStream(true)
-      setEndStreamMessage("")
-      return
-    }
-    setEndStreamBusy(true)
-    setEndStreamMessage("")
-    try {
-      const response = await fetch("/api/stream/end", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${await token()}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ action: "end_stream" }),
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error ?? "unavailable")
-      setConfirmEndStream(false)
-      setEndStreamMessage(
-        `Stream closed. ${result.refunds?.queued ?? 0} unused ${
-          result.refunds?.queued === 1 ? "pitch" : "pitches"
-        } queued for refund.`
-      )
-      await refresh()
-    } catch (error) {
-      const code = error instanceof Error ? error.message : "unavailable"
-      setEndStreamMessage(
-        errors[code] ??
-          "Could not finish every end-stream step. Intake may already be disabled; check setup and try again."
-      )
-    } finally {
-      setEndStreamBusy(false)
-    }
-  }
   const missionInProgress =
     mission && ["heading", "arrived"].includes(mission.status)
   const selectedPitches = [...selected].flatMap((redemptionId) => {
@@ -1212,6 +1173,34 @@ export function PitchQueue() {
           className="fixed right-4 bottom-4 left-4 z-50 max-w-sm border-2 border-amber-700 bg-amber-100 p-4 font-medium text-amber-950 shadow-lg sm:left-auto"
         >
           {warningToast}
+        </div>
+      )}
+      {signedIn && (
+        <div className="-order-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-5 shrink-0 accent-primary"
+              checked={noTravelMode}
+              disabled={modeBusy}
+              onChange={(event) =>
+                void toggleNoTravelMode(event.target.checked)
+              }
+            />
+            <span className="font-medium">No-travel mode</span>
+          </label>
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-5 shrink-0 accent-primary"
+              checked={mapCoarseMode}
+              disabled={modeBusy}
+              onChange={(event) =>
+                void toggleMapCoarseMode(event.target.checked)
+              }
+            />
+            <span className="font-medium">Hide live map position</span>
+          </label>
         </div>
       )}
       <div className="order-0 grid grid-cols-[1fr_auto] items-center gap-4">
@@ -1264,43 +1253,6 @@ export function PitchQueue() {
           </span>
         </label>
       )}
-      {signedIn && (
-        <label className="order-0 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
-          <input
-            type="checkbox"
-            className="size-6 shrink-0 accent-primary"
-            checked={noTravelMode}
-            disabled={modeBusy}
-            onChange={(event) => void toggleNoTravelMode(event.target.checked)}
-          />
-          <span>
-            <span className="font-medium">No-travel mode</span>
-            <span className="block text-sm text-muted-foreground">
-              {noTravelMode
-                ? "On: every mission happens where you are (e.g. in a game). No places are searched and the timer starts right away."
-                : "Off: pitches are matched to real places nearby."}
-            </span>
-          </span>
-        </label>
-      )}
-      {signedIn && (
-        <label className="order-0 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
-          <input
-            type="checkbox"
-            className="size-6 shrink-0 accent-primary"
-            checked={mapCoarseMode}
-            disabled={modeBusy}
-            onChange={(event) => void toggleMapCoarseMode(event.target.checked)}
-          />
-          <span>
-            <span className="font-medium">Hide live map position</span>
-            <span className="block text-sm text-muted-foreground">
-              Shows the same coarse map used for unavailable GPS, with no marker
-              or trail.
-            </span>
-          </span>
-        </label>
-      )}
       {signedIn && process.env.NEXT_PUBLIC_APP_MODE === "emulator" && (
         <div className="order-5">
           <DevPanel
@@ -1310,48 +1262,6 @@ export function PitchQueue() {
             refresh={refresh}
           />
         </div>
-      )}
-      {signedIn && (
-        <Card className="order-0 border-destructive/40">
-          <CardHeader>
-            <CardTitle className="text-lg">End stream</CardTitle>
-            <CardDescription>
-              Disables new pitches, cancels voting, cancels an unstarted
-              mission, and queues every unused redemption for refund.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="gap-3">
-            {endStreamMessage && (
-              <p role="status" className="text-sm text-muted-foreground">
-                {endStreamMessage}
-              </p>
-            )}
-          </CardContent>
-          <CardFooter className="flex-col gap-2 sm:flex-row">
-            <Button
-              variant="destructive"
-              className="min-h-14 w-full text-base sm:w-auto"
-              disabled={endStreamBusy}
-              onClick={() => void endStream()}
-            >
-              {endStreamBusy
-                ? "Ending stream…"
-                : confirmEndStream
-                  ? "Tap again to end stream"
-                  : "End stream"}
-            </Button>
-            {confirmEndStream && (
-              <Button
-                variant="outline"
-                className="min-h-12 w-full sm:w-auto"
-                disabled={endStreamBusy}
-                onClick={() => setConfirmEndStream(false)}
-              >
-                Keep streaming
-              </Button>
-            )}
-          </CardFooter>
-        </Card>
       )}
       {signedIn && mission && (
         <div className="order-1">

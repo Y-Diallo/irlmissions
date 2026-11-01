@@ -44,6 +44,9 @@ export function SetupConsole() {
   const [overlayUrl, setOverlayUrl] = useState("")
   const [mapUrl, setMapUrl] = useState("")
   const [busy, setBusy] = useState(false)
+  const [endStreamBusy, setEndStreamBusy] = useState(false)
+  const [confirmEndStream, setConfirmEndStream] = useState(false)
+  const [endStreamMessage, setEndStreamMessage] = useState("")
   const [travelMode, setTravelMode] = useState<TravelMode>("walk")
   const [llmEnabled, setLlmEnabled] = useState(true)
   const [automation, setAutomation] = useState<AutomationSettings>(
@@ -57,6 +60,16 @@ export function SetupConsole() {
       const body = await response.json()
       if (!response.ok) throw new Error(body.error ?? "Setup unavailable")
       setView(body)
+      const loadedSettings =
+        body.settings && typeof body.settings === "object" ? body.settings : {}
+      const savedMode = loadedSettings.travelMode
+      setTravelMode(
+        savedMode === "transit" || savedMode === "drive" || savedMode === "walk"
+          ? savedMode
+          : "walk"
+      )
+      setLlmEnabled(loadedSettings.llmEnabled === true)
+      setAutomation(parseAutomationSettings(loadedSettings.automation))
       setMessage("")
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Setup unavailable")
@@ -66,7 +79,8 @@ export function SetupConsole() {
   }
 
   useEffect(() => {
-    void load()
+    const initialLoad = setTimeout(() => void load(), 0)
+    return () => clearTimeout(initialLoad)
   }, [])
 
   async function save(form: FormData) {
@@ -133,24 +147,42 @@ export function SetupConsole() {
     }
   }
 
+  async function endStream() {
+    if (!confirmEndStream) {
+      setConfirmEndStream(true)
+      setEndStreamMessage("")
+      return
+    }
+    setEndStreamBusy(true)
+    setEndStreamMessage("")
+    try {
+      const response = await ownerRequest("/api/stream/end", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "end_stream" }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? "unavailable")
+      const queued = Number(result.refunds?.queued ?? 0)
+      setConfirmEndStream(false)
+      setEndStreamMessage(
+        `Stream closed. ${queued} unused ${queued === 1 ? "pitch" : "pitches"} queued for refund.`
+      )
+      await load()
+    } catch {
+      setEndStreamMessage(
+        "Could not finish every end-stream step. Intake may already be disabled; check the Twitch status and try again."
+      )
+    } finally {
+      setEndStreamBusy(false)
+    }
+  }
+
   const settings = view?.settings ?? {}
   const base =
     settings.baseZone && typeof settings.baseZone === "object"
       ? (settings.baseZone as Record<string, unknown>)
       : {}
-
-  useEffect(() => {
-    const saved = view?.settings?.travelMode
-    setTravelMode(
-      saved === "transit" || saved === "drive" || saved === "walk"
-        ? saved
-        : "walk"
-    )
-    if (view?.settings) {
-      setLlmEnabled(view.settings.llmEnabled === true)
-      setAutomation(parseAutomationSettings(view.settings.automation))
-    }
-  }, [view])
 
   return (
     <div className="space-y-6">
@@ -450,6 +482,42 @@ export function SetupConsole() {
             </div>
           </div>
         )}
+      </section>
+      <section className="rounded-lg border border-destructive/40 p-4">
+        <h2 className="text-lg font-semibold">End stream</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Disables new pitches, cancels voting and any unstarted mission, then
+          queues unused redemptions for refund.
+        </p>
+        {endStreamMessage && (
+          <p role="status" className="mt-3 text-sm">
+            {endStreamMessage}
+          </p>
+        )}
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <Button
+            variant="destructive"
+            className="min-h-12 w-full sm:w-auto"
+            disabled={endStreamBusy}
+            onClick={() => void endStream()}
+          >
+            {endStreamBusy
+              ? "Ending stream…"
+              : confirmEndStream
+                ? "Tap again to end stream"
+                : "End stream"}
+          </Button>
+          {confirmEndStream && (
+            <Button
+              variant="outline"
+              className="min-h-12 w-full sm:w-auto"
+              disabled={endStreamBusy}
+              onClick={() => setConfirmEndStream(false)}
+            >
+              Keep streaming
+            </Button>
+          )}
+        </div>
       </section>
       {message && <p role="status">{message}</p>}
     </div>

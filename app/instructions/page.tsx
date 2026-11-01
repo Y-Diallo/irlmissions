@@ -29,7 +29,7 @@ const steps = [
   },
   {
     title: "5. Finish safely",
-    body: "Pause automation whenever you need control. End stream disables intake and queues unused Channel Point redemptions for refund.",
+    body: "Pause automation whenever you need control. When you're done, End stream in Settings disables intake and queues unused Channel Point redemptions for refund.",
   },
 ]
 
