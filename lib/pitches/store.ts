@@ -68,6 +68,7 @@ export function createPitchStore(db: Firestore, tenantId: string): PitchStore {
           walkingRoute: review.walkingRoute,
           duplicateSuggestions: review.duplicateSuggestions,
           straightLineMeters: review.straightLineMeters,
+          processingWarnings: review.warnings,
           publicLabel: review.extraction.publicLabelSuggestion,
           durationMinutes: review.extraction.durationMinutes,
           processing: {

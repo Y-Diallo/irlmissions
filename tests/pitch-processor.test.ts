@@ -166,16 +166,15 @@ describe("pitch processor", () => {
     })
   })
 
-  it("treats stale private location as retryable", async () => {
+  it("warns but continues when a legacy location observation is stale", async () => {
     const state = fixture()
     state.context.origin.observedAt = now - 2 * 60_000 - 1
     await expect(processPitch("redemption-1", state.deps)).resolves.toEqual({
-      kind: "retry",
-      code: "stale_location",
-      automaticRetryAt: now + 15_000,
+      kind: "ready_for_review",
+      flagged: false,
     })
-    expect(state.failure).toMatchObject({ code: "stale_location" })
-    expect(state.deps.automod.check).not.toHaveBeenCalled()
+    expect(state.completed).toMatchObject({ warnings: ["stale_location"] })
+    expect(state.deps.automod.check).toHaveBeenCalledOnce()
   })
 
   it("turns provider outages into bounded retry state", async () => {
@@ -205,15 +204,15 @@ describe("pitch processor", () => {
     })
   })
 
-  it("stops using a coordinate after its feed heartbeat expires", async () => {
+  it("warns but continues using a coordinate after its heartbeat expires", async () => {
     const state = fixture()
     state.context.locationConfirmedAt = now - 120_001
     await expect(processPitch("redemption-1", state.deps)).resolves.toEqual({
-      kind: "retry",
-      code: "stale_location",
-      automaticRetryAt: now + 15_000,
+      kind: "ready_for_review",
+      flagged: false,
     })
-    expect(state.deps.automod.check).not.toHaveBeenCalled()
+    expect(state.completed).toMatchObject({ warnings: ["stale_location"] })
+    expect(state.deps.automod.check).toHaveBeenCalledOnce()
   })
 
   it("does nothing when another worker already owns the pitch", async () => {

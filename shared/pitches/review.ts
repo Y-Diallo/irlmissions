@@ -2,6 +2,7 @@ import type {
   DuplicateSuggestion,
   PitchExtraction,
   PlaceCandidate,
+  ProcessingWarning,
   RiskFlag,
   WalkingRoute,
 } from "@/shared/pitches/processor"
@@ -35,6 +36,7 @@ export type ReviewRecord = {
   walkingRoute?: WalkingRoute
   duplicateSuggestions?: DuplicateSuggestion[]
   straightLineMeters?: number
+  processingWarnings?: ProcessingWarning[]
   publicLabel?: string
   durationMinutes?: number
   rejectionReason?: string
@@ -64,6 +66,7 @@ export type PitchReviewItem = {
   destination: PlaceCandidate | null
   walkingRoute: WalkingRoute | null
   duplicateSuggestions: DuplicateSuggestion[]
+  processingWarnings: ProcessingWarning[]
   rejectionReason: string | null
   locked: boolean
   redemptionResolution: RedemptionResolution | null
@@ -169,6 +172,7 @@ export function toPitchReviewItem(record: ReviewRecord): PitchReviewItem {
     destination: record.destination ?? null,
     walkingRoute: record.walkingRoute ?? null,
     duplicateSuggestions: record.duplicateSuggestions ?? [],
+    processingWarnings: record.processingWarnings ?? [],
     rejectionReason: record.rejectionReason ?? null,
     locked: !!record.lockedBy,
     redemptionResolution: record.redemptionResolution ?? null,
@@ -222,6 +226,7 @@ export function transitionPitchReview(
         "walkingRoute",
         "duplicateSuggestions",
         "straightLineMeters",
+        "processingWarnings",
         "publicLabel",
         "durationMinutes",
       ],

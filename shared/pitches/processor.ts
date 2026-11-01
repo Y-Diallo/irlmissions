@@ -6,6 +6,7 @@ const FEED_HEARTBEAT_MAX_AGE_MS = 2 * 60 * 1000
 const MAX_AUTOMATIC_ATTEMPTS = 5
 
 export type Coordinates = { latitude: number; longitude: number }
+export type ProcessingWarning = "stale_location"
 
 export type ProcessingPitch = {
   redemptionId: string
@@ -62,6 +63,7 @@ export type ReviewPitch = {
   walkingRoute: WalkingRoute
   duplicateSuggestions: DuplicateSuggestion[]
   straightLineMeters: number
+  warnings: ProcessingWarning[]
 }
 
 export type PitchStore = {
@@ -176,13 +178,10 @@ function validateContext(context: ProcessingContext, now: number) {
       ? (context.locationMaxAgeMs ?? DEFAULT_LOCATION_MAX_AGE_MS)
       : FEED_HEARTBEAT_MAX_AGE_MS
   const confirmedAt = context.locationConfirmedAt ?? context.origin.observedAt
-  if (
+  const stale =
     !Number.isFinite(confirmedAt) ||
     confirmedAt > now + 30_000 ||
     now - confirmedAt > maxAge
-  ) {
-    throw new ProcessingError("stale_location")
-  }
   if (
     !Number.isFinite(context.searchRadiusMeters) ||
     context.searchRadiusMeters <= 0 ||
@@ -195,6 +194,7 @@ function validateContext(context: ProcessingContext, now: number) {
   ) {
     throw new ProcessingError("invalid_settings")
   }
+  return stale ? (["stale_location"] satisfies ProcessingWarning[]) : []
 }
 
 function cleanText(value: unknown, max: number, code: string) {
@@ -337,7 +337,7 @@ export async function processPitch(
 
   try {
     const context = await deps.context.read()
-    validateContext(context, now)
+    const warnings = validateContext(context, now)
     const permitted = await providerStep("automod_unavailable", () =>
       deps.automod.check({
         messageId: pitch.redemptionId,
@@ -398,6 +398,7 @@ export async function processPitch(
           walkingRoute,
           duplicateSuggestions,
           straightLineMeters: Math.round(selected.fromOrigin),
+          warnings,
         },
         now
       ))

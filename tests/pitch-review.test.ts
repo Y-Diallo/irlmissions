@@ -196,11 +196,14 @@ describe("pitch review transitions", () => {
       publicLabel: "Mystery objective",
       durationMinutes: 10,
     })
-    const item = toPitchReviewItem(record())
+    const item = toPitchReviewItem(
+      record({ processingWarnings: ["stale_location"] })
+    )
     expect(item).toMatchObject({
       redemptionId: "redemption-1",
       viewerName: "Viewer",
       publicLabel: "Ten-item speed challenge",
+      processingWarnings: ["stale_location"],
     })
     expect(item).not.toHaveProperty("viewer.id")
   })

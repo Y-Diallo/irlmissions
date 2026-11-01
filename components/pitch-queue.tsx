@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -160,6 +160,16 @@ function PitchCard({
                   </li>
                 ))}
               </ul>
+            </AlertDescription>
+          </Alert>
+        )}
+        {pitch.processingWarnings.includes("stale_location") && (
+          <Alert>
+            <AlertTitle>Using last known location</AlertTitle>
+            <AlertDescription>
+              RealtimeIRL has not checked in recently. The destination and walk
+              were calculated from the last saved location; verify them before
+              approving.
             </AlertDescription>
           </Alert>
         )}
@@ -393,6 +403,8 @@ export function PitchQueue() {
   const [pollBusy, setPollBusy] = useState(false)
   const [pollMessage, setPollMessage] = useState("")
   const [message, setMessage] = useState("Sign in to review pitches.")
+  const [warningToast, setWarningToast] = useState("")
+  const shownWarnings = useRef(new Set<string>())
 
   const token = useCallback(async () => {
     const { getBrowserFirebase } = await import("@/lib/firebase/client")
@@ -431,6 +443,17 @@ export function PitchQueue() {
         throw new Error(missionBody.error ?? "unavailable")
       }
       const nextPitches = pitchBody.pitches as PitchReviewItem[]
+      const newlyStale = nextPitches.find(
+        (pitch) =>
+          pitch.processingWarnings?.includes("stale_location") &&
+          !shownWarnings.current.has(pitch.redemptionId)
+      )
+      if (newlyStale) {
+        shownWarnings.current.add(newlyStale.redemptionId)
+        setWarningToast(
+          "Using the last known RealtimeIRL location. Verify the destination before approving."
+        )
+      }
       setPitches(nextPitches)
       setPoll(pollBody.poll)
       setMission(missionBody.mission)
@@ -454,6 +477,12 @@ export function PitchQueue() {
   }, [token])
 
   useEffect(() => {
+    if (!warningToast) return
+    const timeout = setTimeout(() => setWarningToast(""), 8_000)
+    return () => clearTimeout(timeout)
+  }, [warningToast])
+
+  useEffect(() => {
     let active = true
     let interval: ReturnType<typeof setInterval> | undefined
     let unsubscribe = () => {}
@@ -474,6 +503,8 @@ export function PitchQueue() {
           setPoll(null)
           setMission(null)
           setSelected(new Set())
+          shownWarnings.current.clear()
+          setWarningToast("")
           setMessage("Sign in to review pitches.")
         }
       })
@@ -598,6 +629,14 @@ export function PitchQueue() {
 
   return (
     <section aria-labelledby="queue-heading" className="space-y-4">
+      {warningToast && (
+        <div
+          role="status"
+          className="fixed right-4 bottom-4 left-4 z-50 max-w-sm border-2 border-amber-700 bg-amber-100 p-4 font-medium text-amber-950 shadow-lg sm:left-auto"
+        >
+          {warningToast}
+        </div>
+      )}
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-muted-foreground">
