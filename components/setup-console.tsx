@@ -268,18 +268,18 @@ export function SetupConsole() {
           />
           <SetupNumber
             name="baseRadiusMeters"
-            label="Home privacy radius (m)"
+            label="Privacy zone radius (m)"
             value={base.radiusMeters ?? 150}
           />
           <SetupNumber
             name="latitude"
-            label="Home latitude"
+            label="Privacy zone latitude"
             value={base.latitude ?? ""}
             step="any"
           />
           <SetupNumber
             name="longitude"
-            label="Home longitude"
+            label="Privacy zone longitude"
             value={base.longitude ?? ""}
             step="any"
           />
