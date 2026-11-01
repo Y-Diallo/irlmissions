@@ -26,6 +26,8 @@ export type MissionRecord = {
   redemptionId: string
   /** Twitch display name of the viewer who pitched it, shown on the overlay. */
   viewerName?: string
+  /** The viewer's original request, shown only on the owner's console. */
+  request?: string
   /** Viewer's stated penalty, activated on the overlay if the mission fails. */
   failConsequence?: string
   failConsequenceClearRule?: ConsequenceClearRule
@@ -63,6 +65,7 @@ export type MissionPitch = {
   walkingRoute?: unknown
   lockedBy?: unknown
   viewer?: unknown
+  rawText?: unknown
   extraction?: unknown
   noTravel?: unknown
 }
@@ -259,6 +262,9 @@ function missionFromPitch(
     redemptionId: pitch.redemptionId,
     ...(typeof viewerName === "string" && viewerName.trim()
       ? { viewerName: viewerName.trim().slice(0, 25) }
+      : {}),
+    ...(typeof pitch.rawText === "string" && pitch.rawText.trim()
+      ? { request: pitch.rawText.trim().slice(0, 500) }
       : {}),
     publicLabel,
     durationMinutes: durationMinutes as number,

@@ -131,6 +131,18 @@ export function MissionCard({
         </div>
       </CardHeader>
       <CardContent className="gap-5">
+        {mission.request && (
+          <div className="rounded-lg border p-4">
+            <p className="text-sm text-muted-foreground">
+              {mission.viewerName
+                ? `${mission.viewerName} asked`
+                : "Viewer's request"}
+            </p>
+            <p className="mt-1 text-base leading-relaxed break-words whitespace-pre-wrap">
+              {mission.request}
+            </p>
+          </div>
+        )}
         {activeConsequences.map((consequence) => (
           <Alert key={consequence.consequenceId}>
             <AlertTitle>Consequence from {consequence.setBy}</AlertTitle>

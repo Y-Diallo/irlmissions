@@ -83,6 +83,16 @@ describe("mission state", () => {
         now
       ).viewerName
     ).toBe("CoolViewer")
+    const requested = createMissionFromWinner(
+      poll,
+      { ...pitch, rawText: "  Eat a mystery item at the cafe  " },
+      now
+    )
+    expect(requested.request).toBe("Eat a mystery item at the cafe")
+    // The raw request stays on the owner's console, never the overlay.
+    expect(JSON.stringify(missionOverlay(requested))).not.toContain(
+      "mystery item"
+    )
     expect(() =>
       createMissionFromWinner(poll, { ...pitch, lockedBy: "other" }, now)
     ).toThrow("winner_not_available")
