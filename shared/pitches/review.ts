@@ -70,6 +70,8 @@ export type PitchReviewItem = {
   processingWarnings: ProcessingWarning[]
   rejectionReason: string | null
   locked: boolean
+  /** Rejected, but its refund hasn't started, so it can still be edited. */
+  revivable: boolean
   redemptionResolution: RedemptionResolution | null
 }
 
@@ -179,6 +181,7 @@ export function toPitchReviewItem(record: ReviewRecord): PitchReviewItem {
     processingWarnings: record.processingWarnings ?? [],
     rejectionReason: record.rejectionReason ?? null,
     locked: !!record.lockedBy,
+    revivable: isRevivable(record),
     redemptionResolution: record.redemptionResolution ?? null,
   }
 }
@@ -207,6 +210,22 @@ function revealsDestination(label: string, destination: PlaceCandidate) {
   )
 }
 
+// A rejected pitch can be edited and reprocessed only while its refund has
+// never been attempted; once Twitch may have returned the points, the
+// redemption can no longer be fulfilled.
+export function isRevivable(record: ReviewRecord) {
+  const resolution = record.redemptionResolution
+  return (
+    record.reviewStatus === "rejected" &&
+    record.redemptionStatus !== "canceled" &&
+    record.redemptionStatus !== "fulfilled" &&
+    (!resolution ||
+      (resolution.action === "refund" &&
+        resolution.status === "pending" &&
+        resolution.attempts === 0))
+  )
+}
+
 export function transitionPitchReview(
   record: ReviewRecord,
   command: ReviewCommand,
@@ -214,7 +233,11 @@ export function transitionPitchReview(
 ): ReviewUpdate {
   editable(record)
   if (command.action === "edit_raw") {
-    if (!["pending_review", "approved"].includes(record.reviewStatus)) {
+    const revive = isRevivable(record)
+    if (
+      !revive &&
+      !["pending_review", "approved"].includes(record.reviewStatus)
+    ) {
       throw new PitchReviewError("pitch_not_editable")
     }
     return {
@@ -225,6 +248,7 @@ export function transitionPitchReview(
         updatedAt: now,
       },
       deleteFields: [
+        ...(revive ? ["redemptionResolution"] : []),
         "approvedAt",
         "rejectionReason",
         "extraction",

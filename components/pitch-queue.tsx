@@ -147,7 +147,7 @@ function PitchCard({
   })
   const reviewed =
     pitch.reviewStatus === "pending_review" || pitch.reviewStatus === "approved"
-  const rawEditable = reviewed
+  const rawEditable = reviewed || pitch.revivable
   const processing = pitch.reviewStatus === "processing"
 
   return (

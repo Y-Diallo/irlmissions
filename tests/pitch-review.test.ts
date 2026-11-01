@@ -92,6 +92,39 @@ describe("pitch review transitions", () => {
     })
   })
 
+  it("lets a rejected pitch be edited only before its refund starts", () => {
+    const rejected = record({
+      reviewStatus: "rejected",
+      rejectionReason: "no_public_place",
+      redemptionResolution: {
+        action: "refund",
+        status: "pending",
+        attempts: 0,
+        nextAttemptAt: now,
+      },
+    })
+    const update = transitionPitchReview(
+      rejected,
+      { action: "edit_raw", rawText: "Trick or treat at a costume shop" },
+      now
+    )
+    expect(update.values).toMatchObject({ reviewStatus: "processing" })
+    expect(update.deleteFields).toContain("redemptionResolution")
+    for (const resolution of [
+      { action: "refund", status: "pending", attempts: 1 },
+      { action: "refund", status: "processing", attempts: 1 },
+      { action: "refund", status: "complete", attempts: 1 },
+    ] as const) {
+      expect(() =>
+        transitionPitchReview(
+          { ...rejected, redemptionResolution: resolution },
+          { action: "edit_raw", rawText: "Try again" },
+          now
+        )
+      ).toThrow("pitch_not_editable")
+    }
+  })
+
   it("rejects a public label that reveals the street address", () => {
     expect(() =>
       transitionPitchReview(
