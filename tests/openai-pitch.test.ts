@@ -58,7 +58,7 @@ describe("OpenAI pitch extractor", () => {
       },
     })
     expect(request.instructions).toContain(
-      "set anywhere=true unless the viewer explicitly names a place"
+      "travel is implied: set anywhere=false"
     )
     expect(request.instructions).toContain(
       "If the viewer did not provide a consequence, return an empty string"
@@ -72,9 +72,7 @@ describe("OpenAI pitch extractor", () => {
     expect(request.instructions).toContain(
       "funny mission failure rather than a safety concern"
     )
-    expect(request.instructions).toContain(
-      "credible risk of bodily harm"
-    )
+    expect(request.instructions).toContain("credible risk of bodily harm")
     expect(request.instructions).toContain(
       "stealing, assault, property damage, or residential trespass"
     )
@@ -100,6 +98,69 @@ describe("OpenAI pitch extractor", () => {
       request.text.format.schema.properties.riskFlags.description
     ).toContain("stealing, assault, property damage, or residential trespass")
     expect(request.tools).toBeUndefined()
+  })
+
+  it("turns acquiring food into a destination search even if the model misses it", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      response({
+        ...extraction,
+        placeQuery: "",
+        challenge: "Get some french fries",
+        publicLabelSuggestion: "Get French Fries",
+        failConsequence: "",
+        anywhere: true,
+      })
+    )
+    await expect(
+      createOpenAIPitchExtractor(
+        { apiKey: "secret", model: "gpt-6-luna" },
+        fetchMock
+      ).extract("go get some french fries")
+    ).resolves.toMatchObject({
+      anywhere: false,
+      placeQuery: "french fries",
+      challenge: "Get some french fries",
+    })
+  })
+
+  it("sends an activity that needs a facility to that facility", async () => {
+    async function extract(input: string, model: Partial<typeof extraction>) {
+      return createOpenAIPitchExtractor(
+        { apiKey: "secret", model: "gpt-6-luna" },
+        vi.fn<typeof fetch>(async () =>
+          response({ ...extraction, failConsequence: "", ...model })
+        )
+      ).extract(input)
+    }
+    await expect(
+      extract("go play basketball", { anywhere: true, placeQuery: "" })
+    ).resolves.toMatchObject({
+      anywhere: false,
+      placeQuery: "basketball court",
+    })
+    await expect(
+      extract("shoot some hoops, if you lose do 10 pushups", {
+        anywhere: false,
+        placeQuery: "basketball",
+      })
+    ).resolves.toMatchObject({ placeQuery: "basketball court" })
+    await expect(
+      extract("go swimming", { anywhere: true, placeQuery: "" })
+    ).resolves.toMatchObject({ placeQuery: "public swimming pool" })
+    // A specific place the model found is kept.
+    await expect(
+      extract("play basketball at the YMCA", {
+        anywhere: false,
+        placeQuery: "YMCA",
+      })
+    ).resolves.toMatchObject({ placeQuery: "YMCA" })
+    // Holding the ball is not playing the sport.
+    await expect(
+      extract("bounce a basketball ten times", {
+        anywhere: true,
+        placeQuery: "",
+      })
+    ).resolves.toMatchObject({ anywhere: true })
   })
 
   it("rejects refusal, malformed schema output, and provider errors", async () => {
