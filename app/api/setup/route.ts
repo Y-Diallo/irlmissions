@@ -99,6 +99,13 @@ export async function POST(request: Request) {
         .set({ mapCoarseMode }, { merge: true })
       return NextResponse.json({ mapCoarseMode }, { headers: NO_STORE })
     }
+    if (action === "automation_pause" || action === "automation_resume") {
+      const automationPaused = action === "automation_pause"
+      await db
+        .doc(tenantDoc(owner.tenantId, "settings/current"))
+        .set({ automationPaused }, { merge: true })
+      return NextResponse.json({ automationPaused }, { headers: NO_STORE })
+    }
     if (action === "retry_twitch") {
       const { createIntegrationStore } =
         await import("@/lib/integrations/store")

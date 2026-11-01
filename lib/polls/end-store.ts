@@ -5,6 +5,11 @@ import {
   type Firestore,
   type Transaction,
 } from "firebase-admin/firestore"
+import {
+  dropsAfterLoss,
+  parseAutomationSettings,
+  type AutomationSettings,
+} from "@/shared/automation"
 import { eventSubStorageId, type PendingPollEnd } from "@/shared/eventsub"
 import {
   carryActiveConsequences,
@@ -13,6 +18,7 @@ import {
   type MissionRecord,
 } from "@/shared/missions"
 import { idleOverlay, missionOverlay, votingOverlay } from "@/shared/overlay"
+import { dropPitch, type ReviewRecord } from "@/shared/pitches/review"
 import {
   attachTwitchPoll,
   matchesPollAttempt,
@@ -85,6 +91,9 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
             tx.get(settingsRef),
           ])
         const noTravelMode = settingsSnapshot.data()?.noTravelMode === true
+        const automation = parseAutomationSettings(
+          settingsSnapshot.data()?.automation
+        )
         if (!eventSnapshot.exists) return "ignored" as const
         const event = eventSnapshot.data() as PendingPollEnd
         if (event.processing?.status !== "pending") return "ignored" as const
@@ -157,6 +166,7 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
           resolution,
           mission,
           pitchSnapshots,
+          automation,
           now
         )
         const outcome = resolution.winnerRedemptionId
@@ -218,6 +228,7 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
           resolution,
           mission,
           pitchSnapshots,
+          parseAutomationSettings(settings.data()?.automation),
           now
         )
         return { poll: resolution.poll, mission }
@@ -273,8 +284,12 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
     resolution: PollResolution,
     mission: MissionRecord | null,
     pitchSnapshots: DocumentSnapshot[],
+    automation: AutomationSettings,
     now: number
   ) {
+    // A poll nobody voted in isn't a loss for anyone.
+    const contested =
+      !!resolution.winnerRedemptionId || resolution.tiedRedemptionIds.length > 0
     tx.set(
       sessionRef,
       { poll: resolution.poll, ...(mission ? { mission } : {}) },
@@ -300,7 +315,26 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
           updatedAt: now,
         })
       } else if (!resolution.tiedRedemptionIds.includes(redemptionId)) {
+        const record = snapshot.data() as ReviewRecord
+        const losses = record.pollLosses ?? 0
+        // Pitches that keep losing drop out and are refunded so the
+        // automatic queue doesn't go stale.
+        const drop =
+          contested &&
+          record.reviewStatus === "approved" &&
+          dropsAfterLoss(losses, automation)
+        const dropped = drop
+          ? dropPitch({ ...record, lockedBy: undefined }, "lost_polls", now)
+          : null
         tx.update(snapshot.ref, {
+          ...(dropped?.values ?? {}),
+          ...Object.fromEntries(
+            (dropped?.deleteFields ?? []).map((field) => [
+              field,
+              FieldValue.delete(),
+            ])
+          ),
+          ...(contested ? { pollLosses: losses + 1 } : {}),
           lockedBy: FieldValue.delete(),
           updatedAt: now,
         })

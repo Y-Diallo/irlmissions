@@ -1,5 +1,6 @@
 import "server-only"
 import { FieldValue, type Firestore } from "firebase-admin/firestore"
+import { parseAutomationSettings } from "@/shared/automation"
 import { eventSubStorageId } from "@/shared/eventsub"
 import { idleOverlay, missionOverlay } from "@/shared/overlay"
 import type { PollRecord } from "@/shared/polls"
@@ -25,6 +26,7 @@ function missionFrom(data: FirebaseFirestore.DocumentData | undefined) {
 export function createMissionStore(db: Firestore, tenantId: string) {
   const sessionRef = db.doc(tenantDoc(tenantId, "sessions/current"))
   const publicStateRef = db.doc(tenantDoc(tenantId, "publicState/current"))
+  const settingsRef = db.doc(tenantDoc(tenantId, "settings/current"))
   return {
     async read() {
       const mission = missionFrom((await sessionRef.get()).data())
@@ -39,7 +41,7 @@ export function createMissionStore(db: Firestore, tenantId: string) {
         const [session, pitch, settings] = await Promise.all([
           tx.get(sessionRef),
           tx.get(pitchRef),
-          tx.get(db.doc(tenantDoc(tenantId, "settings/current"))),
+          tx.get(settingsRef),
         ])
         if (["heading", "arrived"].includes(session.data()?.mission?.status)) {
           throw new MissionError("mission_in_progress")
@@ -122,10 +124,16 @@ export function createMissionStore(db: Firestore, tenantId: string) {
 
     act(action: MissionAction, now: number) {
       return db.runTransaction(async (tx) => {
-        const session = await tx.get(sessionRef)
+        const [session, settings] = await Promise.all([
+          tx.get(sessionRef),
+          tx.get(settingsRef),
+        ])
         const current = missionFrom(session.data())
         if (!current) throw new MissionError("mission_not_found", 404)
-        const next = transitionMission(current, action, now)
+        const next = transitionMission(current, action, now, {
+          capConsequences: parseAutomationSettings(settings.data()?.automation)
+            .capConsequencesAtNextMissionEnd,
+        })
         if (next === current) return toMissionOwnerView(current)
 
         const canceled = next.status === "canceled"

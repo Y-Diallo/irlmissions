@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { AuthError } from "@/shared/auth/twitch"
+import { DEFAULT_AUTOMATION_SETTINGS } from "@/shared/automation"
 
 const mocks = vi.hoisted(() => ({
   requireOwner: vi.fn(),
@@ -56,6 +57,8 @@ describe("owner pitch routes", () => {
       pitches: [{ redemptionId: "redemption-1" }],
       noTravelMode: true,
       mapCoarseMode: false,
+      automation: DEFAULT_AUTOMATION_SETTINGS,
+      automationPaused: false,
     })
     expect(mocks.requireOwner).toHaveBeenCalledWith("Bearer owner-token")
     expect(mocks.list).toHaveBeenCalledOnce()

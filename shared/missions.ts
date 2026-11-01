@@ -334,10 +334,19 @@ export function parseMissionAction(value: unknown): MissionAction {
   return action
 }
 
+export type TransitionOptions = {
+  /**
+   * Clear every consequence still owed from earlier missions when this one
+   * completes or fails, whatever its rule. Rules still apply until then.
+   */
+  capConsequences?: boolean
+}
+
 export function transitionMission(
   record: MissionRecord,
   action: MissionAction,
-  now: number
+  now: number,
+  options: TransitionOptions = {}
 ): MissionRecord {
   const current = { ...record }
   delete current.activeConsequence
@@ -405,9 +414,11 @@ export function transitionMission(
   if (current.status !== "arrived") {
     throw new MissionError("mission_not_arrived")
   }
-  const remaining = owed.filter(
-    (consequence) => consequence.clearRule !== "through_next_mission"
-  )
+  const remaining = options.capConsequences
+    ? []
+    : owed.filter(
+        (consequence) => consequence.clearRule !== "through_next_mission"
+      )
   const activated =
     target === "failed" && current.failConsequence
       ? ({

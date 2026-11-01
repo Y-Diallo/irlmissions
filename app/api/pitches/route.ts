@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { authFailure, NO_STORE } from "@/lib/auth/http"
+import { parseAutomationSettings } from "@/shared/automation"
 import { tenantDoc } from "@/shared/tenant"
 
 export const runtime = "nodejs"
@@ -26,6 +27,8 @@ export async function GET(request: Request) {
         pitches,
         noTravelMode: settings.data()?.noTravelMode === true,
         mapCoarseMode: settings.data()?.mapCoarseMode === true,
+        automation: parseAutomationSettings(settings.data()?.automation),
+        automationPaused: settings.data()?.automationPaused === true,
       },
       { headers: NO_STORE }
     )

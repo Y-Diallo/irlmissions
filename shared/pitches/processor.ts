@@ -48,6 +48,8 @@ export type PitchExtraction = {
   challenge: string
   publicLabelSuggestion: string
   durationMinutes: number
+  /** Relative entertainment value used only for automatic shortlist ordering. */
+  funScore?: number
   riskFlags: RiskFlag[]
   /** What the viewer said should happen on failure; "" when none. */
   failConsequence?: string
@@ -70,6 +72,7 @@ export type PlaceCandidate = Coordinates & {
   businessStatus:
     "operational" | "closed_temporarily" | "closed_permanently" | "unknown"
   hoursText: string[] | null
+  openNow?: boolean
   userRatingCount?: number
   googleMapsUri: string
   attributions: { provider: string; providerUri: string }[]
@@ -253,12 +256,16 @@ export function fitPollLabel(text: string) {
 
 export function validateExtraction(value: PitchExtraction): PitchExtraction {
   const durationMinutes = value.durationMinutes
+  const funScore = value.funScore ?? 50
   if (
     !Number.isInteger(durationMinutes) ||
     durationMinutes < 1 ||
     durationMinutes > 120 ||
     !Array.isArray(value.riskFlags) ||
-    value.riskFlags.length > 8
+    value.riskFlags.length > 8 ||
+    !Number.isInteger(funScore) ||
+    funScore < 0 ||
+    funScore > 100
   ) {
     throw new ProcessingError("invalid_extraction")
   }
@@ -312,6 +319,7 @@ export function validateExtraction(value: PitchExtraction): PitchExtraction {
       "invalid_extraction"
     ),
     durationMinutes,
+    funScore,
     riskFlags,
     failConsequence,
     consequenceClearRule,
@@ -339,6 +347,7 @@ function fallbackExtraction(
     challenge: text,
     publicLabelSuggestion: fitPollLabel(text),
     durationMinutes: defaultDurationMinutes,
+    funScore: 50,
     riskFlags: [],
     consequenceClearRule: "through_next_mission",
     consequenceDurationMinutes: 0,

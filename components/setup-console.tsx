@@ -4,6 +4,13 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  automationPreset,
+  DEFAULT_AUTOMATION_SETTINGS,
+  parseAutomationSettings,
+  type AutomationSettings,
+  type ShortlistOrdering,
+} from "@/shared/automation"
 
 type SetupView = {
   twitchLogin: string | null
@@ -39,6 +46,9 @@ export function SetupConsole() {
   const [busy, setBusy] = useState(false)
   const [travelMode, setTravelMode] = useState<TravelMode>("walk")
   const [llmEnabled, setLlmEnabled] = useState(true)
+  const [automation, setAutomation] = useState<AutomationSettings>(
+    DEFAULT_AUTOMATION_SETTINGS
+  )
 
   async function load() {
     setBusy(true)
@@ -72,6 +82,7 @@ export function SetupConsole() {
           travelMode: String(form.get("travelMode") ?? "walk"),
           arrivalRadiusMeters: Number(form.get("arrivalRadiusMeters")),
           llmEnabled: form.get("llmEnabled") === "on",
+          automation,
           baseZone: {
             latitude: Number(form.get("latitude")),
             longitude: Number(form.get("longitude")),
@@ -137,6 +148,7 @@ export function SetupConsole() {
     )
     if (view?.settings) {
       setLlmEnabled(view.settings.llmEnabled === true)
+      setAutomation(parseAutomationSettings(view.settings.automation))
     }
   }, [view])
 
@@ -261,6 +273,153 @@ export function SetupConsole() {
           />
           Use OpenAI pitch cleanup and flags
         </label>
+        <section className="space-y-5 rounded-lg border p-4">
+          <div>
+            <h2 className="text-lg font-semibold">Automation</h2>
+            <p className="text-sm text-muted-foreground">
+              Presets fill these controls. You can change any option afterward.
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {(["manual", "assisted", "full_auto"] as const).map((preset) => (
+              <Button
+                key={preset}
+                type="button"
+                className="min-h-12"
+                variant={automation.preset === preset ? "default" : "outline"}
+                onClick={() => setAutomation(automationPreset(preset))}
+              >
+                {preset === "full_auto"
+                  ? "Full auto"
+                  : `${preset[0]!.toUpperCase()}${preset.slice(1)}`}
+              </Button>
+            ))}
+          </div>
+
+          <AutomationToggle
+            label="Auto approve clean pitches"
+            checked={automation.autoApproval}
+            onChange={(autoApproval) =>
+              setAutomation((current) => ({ ...current, autoApproval }))
+            }
+          />
+          <AutomationToggle
+            label="Only auto approve subscribers, VIPs, or moderators"
+            description="Flagged pitches always wait for you. To recognize VIPs and subs, sign out and sign in with Twitch again once."
+            checked={automation.trustedViewersOnly}
+            onChange={(trustedViewersOnly) =>
+              setAutomation((current) => ({
+                ...current,
+                trustedViewersOnly,
+              }))
+            }
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <AutomationNumber
+              label="Veto window (seconds)"
+              value={automation.vetoSeconds}
+              min={0}
+              max={600}
+              onChange={(vetoSeconds) =>
+                setAutomation((current) => ({ ...current, vetoSeconds }))
+              }
+            />
+            <AutomationNumber
+              label="Poll options"
+              value={automation.shortlistSize}
+              min={2}
+              max={5}
+              onChange={(shortlistSize) =>
+                setAutomation((current) => ({ ...current, shortlistSize }))
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="shortlistOrdering">Shortlist ordering</Label>
+            <select
+              id="shortlistOrdering"
+              className="min-h-12 w-full rounded-md border border-input bg-background px-3"
+              value={automation.shortlistOrdering}
+              onChange={(event) =>
+                setAutomation((current) => ({
+                  ...current,
+                  shortlistOrdering: event.target.value as ShortlistOrdering,
+                }))
+              }
+            >
+              <option value="mixed">Mix: oldest, newest, then fun</option>
+              <option value="oldest">Oldest first</option>
+              <option value="newest">Newest first</option>
+              <option value="fun">AI fun score</option>
+              <option value="closest">Closest first</option>
+            </select>
+          </div>
+          <AutomationNumber
+            label="Refund after poll losses"
+            value={automation.pollLossLimit}
+            min={1}
+            max={20}
+            onChange={(pollLossLimit) =>
+              setAutomation((current) => ({ ...current, pollLossLimit }))
+            }
+          />
+          <AutomationToggle
+            label="Automatically start the next poll"
+            checked={automation.autoStartPoll}
+            onChange={(autoStartPoll) =>
+              setAutomation((current) => ({ ...current, autoStartPoll }))
+            }
+          />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <AutomationNumber
+              label="Auto poll length (seconds)"
+              value={automation.pollDurationSeconds}
+              min={15}
+              max={1800}
+              onChange={(pollDurationSeconds) =>
+                setAutomation((current) => ({
+                  ...current,
+                  pollDurationSeconds,
+                }))
+              }
+            />
+            <AutomationNumber
+              label="Wait after mission (seconds)"
+              value={automation.postMissionDelaySeconds}
+              min={0}
+              max={300}
+              onChange={(postMissionDelaySeconds) =>
+                setAutomation((current) => ({
+                  ...current,
+                  postMissionDelaySeconds,
+                }))
+              }
+            />
+            <AutomationNumber
+              label="Minimum eligible pitches"
+              value={automation.minimumEligiblePitches}
+              min={2}
+              max={5}
+              onChange={(minimumEligiblePitches) =>
+                setAutomation((current) => ({
+                  ...current,
+                  minimumEligiblePitches,
+                }))
+              }
+            />
+          </div>
+          <AutomationToggle
+            label="Cap every consequence at the end of the next mission"
+            description="Timers and other rules still apply; anything still owed clears when the next mission is marked complete or failed."
+            checked={automation.capConsequencesAtNextMissionEnd}
+            onChange={(capConsequencesAtNextMissionEnd) =>
+              setAutomation((current) => ({
+                ...current,
+                capConsequencesAtNextMissionEnd,
+              }))
+            }
+          />
+        </section>
         <Button className="min-h-12" disabled={busy} type="submit">
           Save setup
         </Button>
@@ -293,6 +452,73 @@ export function SetupConsole() {
         )}
       </section>
       {message && <p role="status">{message}</p>}
+    </div>
+  )
+}
+
+function AutomationToggle({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string
+  description?: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className="flex min-h-14 cursor-pointer items-center gap-3 text-base">
+      <input
+        type="checkbox"
+        className="size-6 shrink-0 accent-primary"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span>
+        {label}
+        {description && (
+          <span className="block text-sm text-muted-foreground">
+            {description}
+          </span>
+        )}
+      </span>
+    </label>
+  )
+}
+
+function AutomationNumber({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  onChange: (value: number) => void
+}) {
+  const id = label.toLocaleLowerCase().replaceAll(/[^a-z0-9]+/g, "-")
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={max}
+        value={value}
+        className="min-h-12 text-base"
+        onChange={(event) => onChange(Number(event.target.value))}
+        // Clamp once editing ends; the server would otherwise silently fall
+        // back to the default for an out-of-range value.
+        onBlur={() =>
+          onChange(Math.min(max, Math.max(min, Math.round(value) || min)))
+        }
+      />
     </div>
   )
 }

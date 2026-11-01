@@ -25,6 +25,12 @@ import type {
 } from "@/shared/pitches/processor"
 import { DEFAULT_POLL_DURATION_SECONDS, type PollRecord } from "@/shared/polls"
 import type { MissionAction, MissionOwnerView } from "@/shared/missions"
+import {
+  automationEnabled,
+  DEFAULT_AUTOMATION_SETTINGS,
+  type AutomationSettings,
+  type AutomationStatus,
+} from "@/shared/automation"
 
 const errors: Record<string, string> = {
   pitch_locked: "This pitch is locked by the current poll or mission.",
@@ -69,6 +75,50 @@ const errors: Record<string, string> = {
   stream_poll_needs_reconciliation:
     "Reconcile the uncertain Twitch poll before ending the stream.",
   unauthorized: "Your owner session ended. Sign in again.",
+}
+
+const rejectionReasons: Record<string, string> = {
+  owner: "owner decision",
+  owner_removed: "removed by owner",
+  lost_polls: "lost too many polls",
+  out_of_range: "the place is out of range now",
+  place_closed: "the place is closed now",
+  mission_canceled: "mission canceled",
+}
+
+const AUTOMATION_HEARTBEAT_MS = 5_000
+
+function automationStatusText(status: AutomationStatus | null, now: number) {
+  if (!status) return ""
+  switch (status.state) {
+    case "cooldown":
+      return `Next poll starts automatically in ${Math.max(
+        1,
+        Math.ceil((status.startsAt - now) / 1000)
+      )}s.`
+    case "waiting":
+      return `Auto poll waiting for ${status.needed} eligible pitches (${status.eligible} now).`
+    case "started":
+      return "Auto poll started."
+    case "error":
+      return `Auto poll couldn't start: ${errors[status.code] ?? status.code}`
+    default:
+      return ""
+  }
+}
+
+/** Re-renders every second while `until` is in the future. */
+function useCountdown(until: number | null) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (until === null || until <= Date.now()) return
+    const interval = setInterval(() => {
+      setNow(Date.now())
+      if (Date.now() >= until) clearInterval(interval)
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [until])
+  return now
 }
 
 const processingErrors: Record<string, string> = {
@@ -147,6 +197,11 @@ function PitchCard({
   const [message, setMessage] = useState("")
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [processingDelayed, setProcessingDelayed] = useState(false)
+  const now = useCountdown(pitch.vetoUntil)
+  const vetoSecondsLeft =
+    pitch.reviewStatus === "approved" && pitch.vetoUntil !== null
+      ? Math.max(0, Math.ceil((pitch.vetoUntil - now) / 1000))
+      : 0
   const serverRawText = useRef(pitch.rawText)
   const serverPublicLabel = useRef(pitch.publicLabel)
   const serverDuration = useRef(String(pitch.durationMinutes))
@@ -308,11 +363,32 @@ function PitchCard({
             minute: "2-digit",
           })}
         </CardDescription>
-        <CardAction>
+        <CardAction className="flex flex-wrap justify-end gap-1">
+          {pitch.autoApproved && pitch.reviewStatus === "approved" && (
+            <Badge variant="outline">Auto</Badge>
+          )}
           <StatusBadge pitch={pitch} />
         </CardAction>
       </CardHeader>
       <CardContent className="gap-5">
+        {vetoSecondsLeft > 0 && (
+          <div className="grid gap-3 rounded-lg border border-amber-600/50 bg-amber-50 p-4 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
+            <p className="text-base">
+              <span className="font-medium">Auto-approved.</span> It can go in a
+              poll in {vetoSecondsLeft}s unless you reject it.
+            </p>
+            <Button
+              className="min-h-14 w-full text-base md:w-fit"
+              variant="destructive"
+              disabled={busy || pitch.locked}
+              onClick={() =>
+                void act(() => mutate(pitch, { action: "reject" }))
+              }
+            >
+              Reject and refund
+            </Button>
+          </div>
+        )}
         {pitch.riskFlags.length > 0 && (
           <Alert variant="destructive">
             <AlertTitle>Human safety decision required</AlertTitle>
@@ -582,7 +658,10 @@ function PitchCard({
 
         {pitch.reviewStatus === "rejected" && (
           <p className="text-sm text-muted-foreground">
-            Rejected: {pitch.rejectionReason ?? "owner decision"}.{" "}
+            Rejected:{" "}
+            {rejectionReasons[pitch.rejectionReason ?? "owner"] ??
+              pitch.rejectionReason}
+            .{" "}
             {pitch.redemptionResolution?.status === "complete"
               ? "Refund confirmed."
               : pitch.redemptionResolution?.status === "error"
@@ -689,6 +768,12 @@ export function PitchQueue() {
   const [pollMessage, setPollMessage] = useState("")
   const [noTravelMode, setNoTravelMode] = useState(false)
   const [mapCoarseMode, setMapCoarseMode] = useState(false)
+  const [automation, setAutomation] = useState<AutomationSettings>(
+    DEFAULT_AUTOMATION_SETTINGS
+  )
+  const [automationPaused, setAutomationPaused] = useState(false)
+  const [automationStatus, setAutomationStatus] =
+    useState<AutomationStatus | null>(null)
   const [pollDuration, setPollDuration] = useState(
     String(DEFAULT_POLL_DURATION_SECONDS)
   )
@@ -716,6 +801,29 @@ export function PitchQueue() {
       setNoTravelMode(result.noTravelMode === true)
     } catch {
       setMessage("Could not change no-travel mode. Try again.")
+    } finally {
+      setModeBusy(false)
+    }
+  }
+  async function toggleAutomationPaused(paused: boolean) {
+    setModeBusy(true)
+    setMessage("")
+    try {
+      const response = await fetch("/api/setup", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${await token()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: paused ? "automation_pause" : "automation_resume",
+        }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? "unavailable")
+      setAutomationPaused(result.automationPaused === true)
+    } catch {
+      setMessage("Could not change automation. Try again.")
     } finally {
       setModeBusy(false)
     }
@@ -798,6 +906,8 @@ export function PitchQueue() {
       setPitches(nextPitches)
       setNoTravelMode(pitchBody.noTravelMode === true)
       setMapCoarseMode(pitchBody.mapCoarseMode === true)
+      if (pitchBody.automation) setAutomation(pitchBody.automation)
+      setAutomationPaused(pitchBody.automationPaused === true)
       setPoll(pollBody.poll)
       setMission(missionBody.mission)
       setSelected((current) => {
@@ -867,6 +977,44 @@ export function PitchQueue() {
       clearInterval(interval)
     }
   }, [refresh])
+
+  const automationRunning =
+    signedIn && automationEnabled(automation) && !automationPaused
+  useEffect(() => {
+    if (!automationRunning) return
+    let active = true
+    let running = false
+    async function beat() {
+      if (running || document.visibilityState !== "visible") return
+      running = true
+      try {
+        const response = await fetch("/api/automation", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${await token()}` },
+        })
+        const result = await response.json()
+        if (!active || !response.ok) return
+        const status = result.status as AutomationStatus
+        setAutomationStatus(status)
+        if (status.state === "started") void refresh()
+      } catch {
+        // The next beat retries; automation state lives on the server.
+      } finally {
+        running = false
+      }
+    }
+    void beat()
+    const interval = setInterval(() => void beat(), AUTOMATION_HEARTBEAT_MS)
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
+  }, [automationRunning, refresh, token])
+  // A stale status from before a pause is never shown.
+  const shownStatus = automationRunning ? automationStatus : null
+  const statusNow = useCountdown(
+    shownStatus?.state === "cooldown" ? shownStatus.startsAt : null
+  )
 
   async function mutate(pitch: PitchReviewItem, command: ReviewCommand) {
     const response = await fetch(
@@ -1083,6 +1231,38 @@ export function PitchQueue() {
           Refresh
         </Button>
       </div>
+      {signedIn && automationEnabled(automation) && (
+        <label
+          className={`order-0 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base ${
+            automationPaused
+              ? "border-amber-600 bg-amber-50 dark:bg-amber-950/30"
+              : ""
+          }`}
+        >
+          <input
+            type="checkbox"
+            className="size-6 shrink-0 accent-primary"
+            checked={automationPaused}
+            disabled={modeBusy}
+            onChange={(event) =>
+              void toggleAutomationPaused(event.target.checked)
+            }
+          />
+          <span>
+            <span className="font-medium">Pause automation</span>
+            <span className="block text-sm text-muted-foreground">
+              {automationPaused
+                ? "Paused: nothing is auto-approved and no poll starts on its own."
+                : `On: ${[
+                    automation.autoApproval && "auto-approving clean pitches",
+                    automation.autoStartPoll && "starting polls",
+                  ]
+                    .filter(Boolean)
+                    .join(" and ")}. Keep this page open.`}
+            </span>
+          </span>
+        </label>
+      )}
       {signedIn && (
         <label className="order-4 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
           <input
@@ -1269,6 +1449,12 @@ export function PitchQueue() {
                 </p>
               </div>
             )}
+            {!pollInProgress &&
+              automationStatusText(shownStatus, statusNow) && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {automationStatusText(shownStatus, statusNow)}
+                </p>
+              )}
             {poll?.status === "create_unknown" && (
               <Alert variant="destructive">
                 <AlertTitle>Poll creation needs reconciliation</AlertTitle>

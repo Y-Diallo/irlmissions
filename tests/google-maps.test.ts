@@ -68,6 +68,7 @@ describe("Google Maps providers", () => {
       (init?.headers as Record<string, string>)["X-Goog-FieldMask"]
     )
     expect(fields).toContain("places.currentOpeningHours.weekdayDescriptions")
+    expect(fields).toContain("places.currentOpeningHours.openNow")
     expect(fields).not.toContain("places.photos")
     expect(fields).not.toBe("*")
     const request = JSON.parse(String(init?.body))

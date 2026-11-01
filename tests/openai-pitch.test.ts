@@ -24,6 +24,7 @@ const extraction = {
   challenge: "Eat ten fish sandwiches in ten minutes",
   publicLabelSuggestion: "Ten-item speed challenge",
   durationMinutes: 10,
+  funScore: 75,
   riskFlags: [],
   failConsequence: "Eat a lemon",
   consequenceClearRule: "through_next_mission",
@@ -66,6 +67,21 @@ describe("OpenAI pitch extractor", () => {
       "Ordinary public social interaction must not produce a risk flag"
     )
     expect(request.instructions).toContain(
+      "feeding a giraffe at a zoo is not dangerous by itself"
+    )
+    expect(request.instructions).toContain(
+      "funny mission failure rather than a safety concern"
+    )
+    expect(request.instructions).toContain(
+      "credible risk of bodily harm"
+    )
+    expect(request.instructions).toContain(
+      "stealing, assault, property damage, or residential trespass"
+    )
+    expect(request.instructions).toContain(
+      "Do not flag merely hypothetical hazards, minor laws or ordinances"
+    )
+    expect(request.instructions).toContain(
       "filming or touching without consent"
     )
     expect(request.instructions).toContain(
@@ -74,6 +90,15 @@ describe("OpenAI pitch extractor", () => {
     expect(
       request.text.format.schema.properties.riskFlags.description
     ).toContain("inviting a stranger to a harmless game or challenge")
+    expect(
+      request.text.format.schema.properties.riskFlags.description
+    ).toContain("minor laws, ordinances, posted policies, and venue rules")
+    expect(
+      request.text.format.schema.properties.riskFlags.description
+    ).toContain("feeding an animal at a zoo")
+    expect(
+      request.text.format.schema.properties.riskFlags.description
+    ).toContain("stealing, assault, property damage, or residential trespass")
     expect(request.tools).toBeUndefined()
   })
 

@@ -13,6 +13,7 @@ const fallbackPlace: PlaceCandidate = {
   publicAccess: true,
   businessStatus: "operational",
   hoursText: ["Open 24 hours"],
+  openNow: true,
   googleMapsUri: "https://maps.google.com/?cid=fake-place",
   attributions: [],
 }
@@ -57,6 +58,7 @@ export function createFakePitchProviders(
             text.replaceAll(/\[[^\]]+\]/g, "").trim() || "Chat-picked objective"
           ),
           durationMinutes: 10,
+          funScore: 70,
           riskFlags,
           failConsequence: consequence,
           consequenceClearRule: consequenceMinutes

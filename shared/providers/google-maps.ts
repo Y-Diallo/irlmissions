@@ -16,6 +16,7 @@ const PLACE_FIELDS = [
   "places.location",
   "places.businessStatus",
   "places.currentOpeningHours.weekdayDescriptions",
+  "places.currentOpeningHours.openNow",
   "places.userRatingCount",
   "places.primaryType",
   "places.pureServiceAreaBusiness",
@@ -155,6 +156,7 @@ function parsePlace(value: unknown): PlaceCandidate | null {
     return null
   }
   const descriptions = openingHours?.weekdayDescriptions
+  const openNow = openingHours?.openNow
   const hoursText = Array.isArray(descriptions)
     ? descriptions.filter((item): item is string => typeof item === "string")
     : null
@@ -171,6 +173,7 @@ function parsePlace(value: unknown): PlaceCandidate | null {
       (!primaryType || !NON_DESTINATION_TYPES.has(primaryType)),
     businessStatus: businessStatus(place?.businessStatus),
     hoursText: hoursText?.length ? hoursText : null,
+    ...(typeof openNow === "boolean" ? { openNow } : {}),
     ...(Number.isSafeInteger(userRatingCount) &&
     (userRatingCount as number) >= 0
       ? { userRatingCount: userRatingCount as number }
@@ -233,6 +236,35 @@ export async function getGooglePlacePhoto(
     photoUri: await getGooglePlacePhotoUri(config, photo.name, fetchImpl),
     ...(photo.googleMapsUri ? { googleMapsUri: photo.googleMapsUri } : {}),
     authorAttributions: photo.authorAttributions,
+  }
+}
+
+/** Live open/closed state, rechecked before an automatic poll. */
+export async function getGooglePlaceStatus(
+  config: GoogleMapsConfig,
+  placeId: string,
+  fetchImpl: Fetch = fetch
+): Promise<Pick<PlaceCandidate, "businessStatus" | "openNow">> {
+  if (!/^[A-Za-z0-9_-]{5,256}$/.test(placeId)) {
+    throw new Error("Invalid Google Place ID")
+  }
+  const response = await fetchImpl(
+    `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
+    {
+      headers: {
+        "X-Goog-Api-Key": config.apiKey,
+        "X-Goog-FieldMask": "businessStatus,currentOpeningHours.openNow",
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    }
+  ).catch(() => null)
+  if (!response?.ok) throw new Error("Google Place status unavailable")
+  const payload = object(await response.json().catch(() => null))
+  const openNow = object(payload?.currentOpeningHours)?.openNow
+  return {
+    businessStatus: businessStatus(payload?.businessStatus),
+    ...(typeof openNow === "boolean" ? { openNow } : {}),
   }
 }
 

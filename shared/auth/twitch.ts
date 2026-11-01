@@ -11,6 +11,12 @@ export const TWITCH_SCOPES = [
   "channel:manage:polls",
   "moderation:read",
 ] as const
+// Requested at sign-in but not required, so existing logins keep working.
+// They let the automation trust filter recognize VIPs and subscribers.
+export const TWITCH_OPTIONAL_SCOPES = [
+  "channel:read:vips",
+  "channel:read:subscriptions",
+] as const
 export const STATE_SECONDS = 600
 export const HANDOFF_SECONDS = 120
 
@@ -166,7 +172,7 @@ export function authorizationUrl(config: TwitchConfig, state: string) {
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     response_type: "code",
-    scope: TWITCH_SCOPES.join(" "),
+    scope: [...TWITCH_SCOPES, ...TWITCH_OPTIONAL_SCOPES].join(" "),
     state,
   }).toString()
   return url.toString()

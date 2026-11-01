@@ -26,7 +26,7 @@ export type ReviewStatus =
 export type ReviewRecord = {
   redemptionId: string
   rawText: string
-  viewer?: { name?: string; login?: string }
+  viewer?: { id?: string; name?: string; login?: string }
   reviewStatus: ReviewStatus
   createdAt: number
   updatedAt: number
@@ -46,6 +46,13 @@ export type ReviewRecord = {
   durationMinutes?: number
   rejectionReason?: string
   approvedAt?: number
+  /** Approved by automation; it can't go in a poll before `vetoUntil`. */
+  autoApprovedAt?: number
+  vetoUntil?: number
+  /** Polls this pitch has lost; automation drops it at the limit. */
+  pollLosses?: number
+  /** Sub, VIP, mod or the broadcaster, once looked up for the trust filter. */
+  viewerTrusted?: boolean
   /** Removed from the producer queue without deleting refund/audit state. */
   hiddenAt?: number
   removedFromStatus?: ReviewStatus
@@ -86,6 +93,10 @@ export type PitchReviewItem = {
   processingWarnings: ProcessingWarning[]
   rejectionReason: string | null
   locked: boolean
+  /** Auto-approved; the owner can still reject it until `vetoUntil`. */
+  autoApproved: boolean
+  vetoUntil: number | null
+  pollLosses: number
   /** Rejected, but its refund hasn't started, so it can still be edited. */
   revivable: boolean
   redemptionResolution: RedemptionResolution | null
@@ -130,6 +141,8 @@ export class PitchReviewError extends Error {
     super(code)
   }
 }
+
+const AUTO_APPROVAL_FIELDS = ["autoApprovedAt", "vetoUntil"]
 
 function cleanText(value: unknown, field: string, max: number) {
   if (typeof value !== "string")
@@ -269,6 +282,9 @@ export function toPitchReviewItem(record: ReviewRecord): PitchReviewItem {
     processingWarnings: record.processingWarnings ?? [],
     rejectionReason: record.rejectionReason ?? null,
     locked: !!record.lockedBy,
+    autoApproved: typeof record.autoApprovedAt === "number",
+    vetoUntil: record.vetoUntil ?? null,
+    pollLosses: record.pollLosses ?? 0,
     revivable: isRevivable(record),
     redemptionResolution: record.redemptionResolution ?? null,
   }
@@ -353,6 +369,7 @@ function reprocess(
     },
     deleteFields: [
       ...(revive ? ["redemptionResolution"] : []),
+      ...AUTO_APPROVAL_FIELDS,
       "approvedAt",
       "rejectionReason",
       "extraction",
@@ -418,7 +435,7 @@ export function transitionPitchReview(
             }
           : {}),
       },
-      deleteFields: ["approvedAt"],
+      deleteFields: ["approvedAt", ...AUTO_APPROVAL_FIELDS],
     }
   }
   if (command.action === "edit_raw") {
@@ -459,7 +476,7 @@ export function transitionPitchReview(
         reviewStatus: "pending_review",
         updatedAt: now,
       },
-      deleteFields: ["approvedAt"],
+      deleteFields: ["approvedAt", ...AUTO_APPROVAL_FIELDS],
     }
   }
   if (command.action === "approve") {
@@ -495,7 +512,7 @@ export function transitionPitchReview(
         approvedAt: now,
         updatedAt: now,
       },
-      deleteFields: ["rejectionReason"],
+      deleteFields: ["rejectionReason", ...AUTO_APPROVAL_FIELDS],
     }
   }
   if (command.action === "reject") {
@@ -514,7 +531,7 @@ export function transitionPitchReview(
         },
         updatedAt: now,
       },
-      deleteFields: ["approvedAt"],
+      deleteFields: ["approvedAt", ...AUTO_APPROVAL_FIELDS],
     }
   }
   if (command.action === "retry_resolution") {
@@ -547,5 +564,40 @@ export function transitionPitchReview(
       updatedAt: now,
     },
     deleteFields: [],
+  }
+}
+
+/**
+ * Approval by automation: the same checks as the owner's approval, plus a
+ * veto window during which the pitch stays out of polls.
+ */
+export function autoApprovePitch(
+  record: ReviewRecord,
+  now: number,
+  vetoSeconds: number
+): ReviewUpdate {
+  const update = transitionPitchReview(record, { action: "approve" }, now)
+  return {
+    values: {
+      ...update.values,
+      autoApprovedAt: now,
+      vetoUntil: now + vetoSeconds * 1000,
+    },
+    deleteFields: update.deleteFields.filter(
+      (field) => !AUTO_APPROVAL_FIELDS.includes(field)
+    ),
+  }
+}
+
+/** Automation drops a pitch it can no longer run, refunding the viewer. */
+export function dropPitch(
+  record: ReviewRecord,
+  reason: string,
+  now: number
+): ReviewUpdate {
+  const update = transitionPitchReview(record, { action: "reject" }, now)
+  return {
+    values: { ...update.values, rejectionReason: reason },
+    deleteFields: update.deleteFields,
   }
 }

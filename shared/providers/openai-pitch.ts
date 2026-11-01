@@ -32,6 +32,7 @@ const schema = {
     "challenge",
     "publicLabelSuggestion",
     "durationMinutes",
+    "funScore",
     "riskFlags",
     "failConsequence",
     "consequenceClearRule",
@@ -59,6 +60,13 @@ const schema = {
         'A complete, success-oriented Twitch objective of at most 25 characters. Remove filler such as go to, challenge a stranger, and conjunctions; keep the destination category or safe chain name plus the core activity. Use an action that describes success: when losing triggers the consequence, use Win rather than Play. Example: "Win Tic-Tac-Toe at a Gym". Never end with a dangling word such as and, at, to, or with. Omit exact addresses and local destination names.',
     },
     durationMinutes: { type: "integer", minimum: 1, maximum: 120 },
+    funScore: {
+      type: "integer",
+      minimum: 0,
+      maximum: 100,
+      description:
+        "Relative entertainment value for an IRL livestream, from 0 to 100. Favor visual, achievable, interactive objectives; do not reward danger or harassment.",
+    },
     failConsequence: {
       type: "string",
       description:
@@ -81,7 +89,7 @@ const schema = {
       type: "array",
       maxItems: 8,
       description:
-        "Concerns that require owner review. Ordinary public social interaction is not a concern by itself: do not flag talking to someone, asking a question, requesting help, or inviting a stranger to a harmless game or challenge. Flag interaction only when the request includes harassment, intimidation, coercion, following, unwanted persistence, sexual conduct, targeting a vulnerable person, or filming or touching without consent.",
+        'Concrete, material concerns in the viewer\'s requested conduct that require owner review. Flag a credible risk of bodily harm; harassment, coercion, or non-consensual conduct; or serious unlawful conduct with a victim or meaningful invasion of person, home, or property, such as stealing, assault, property damage, or residential trespass. Do not flag merely hypothetical risk, venue availability, activities requiring normal staff permission or supervision, or minor laws, ordinances, posted policies, and venue rules by themselves. Lawful venue-managed activities such as feeding an animal at a zoo are not dangerous by themselves; if unavailable, the mission can simply fail. Flag an animal activity only when the requested conduct creates a credible risk of bodily harm, such as entering an enclosure. Ordinary public social interaction is not a concern by itself: do not flag talking to someone, asking a question, requesting help, or inviting a stranger to a harmless game or challenge. Flag interaction only when the request includes harassment, intimidation, coercion, following, unwanted persistence, sexual conduct, targeting a vulnerable person, or filming or touching without consent.',
       items: {
         type: "object",
         additionalProperties: false,
@@ -173,7 +181,7 @@ export function createOpenAIPitchExtractor(
               store: false,
               max_output_tokens: 1000,
               instructions:
-                "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. A verb like go, walk, run, explore, or trick-or-treat is not a destination: set anywhere=true unless the viewer explicitly names a place or requests a kind of place. Named public businesses, attractions, markets, parks, neighborhoods, districts, and cities are valid destinations. Flag dangerous, illegal, harassing, coercive, or otherwise concerning activity for human review, including any requested failure consequence. Ordinary public social interaction must not produce a risk flag by itself. Talking to someone, asking a question, requesting help, trick-or-treating, or inviting a stranger to a harmless game or challenge are normal IRL activities. Do not assume harassment or lack of consent merely because the participant is a stranger. Flag social interaction when the request itself calls for harassment, intimidation, coercion, following, unwanted persistence after refusal, sexual conduct, targeting minors or vulnerable people, or filming or touching without consent. Preserve an explicitly viewer-provided consequence and flag it when concerning so the owner can decide. If the viewer did not provide a consequence, return an empty string; never invent one. For a consequence, return its clearing rule: timed when the viewer states a duration and extract whole minutes; at_next_stop when it lasts until the next arrival or stop; through_next_mission when it lasts through the next mission; manual only when no automatic rule fits. When the wording is ambiguous, default to through_next_mission. Return duration 0 for non-timed rules. The public label is a poll choice of at most 25 characters that plainly restates the viewer's request. Do not make it vague or mysterious. Big chain names are fine because they don't reveal which location; leave out exact addresses and local destination names before arrival.",
+                "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. A verb like go, walk, run, explore, or trick-or-treat is not a destination: set anywhere=true unless the viewer explicitly names a place or requests a kind of place. Named public businesses, attractions, markets, parks, neighborhoods, districts, and cities are valid destinations. A risk flag is for a credible risk of bodily harm; harassment, coercion, or non-consensual conduct; or serious unlawful conduct with a victim or meaningful invasion of person, home, or property, such as stealing, assault, property damage, or residential trespass. Do not flag merely hypothetical hazards, minor laws or ordinances, posted policies, venue rules, uncertainty about whether a venue offers an activity, or the fact that an ordinary activity may require permission or staff supervision. A lawful venue-managed activity such as feeding a giraffe at a zoo is not dangerous by itself; if it is unavailable, that is a funny mission failure rather than a safety concern. Flag an animal activity when the requested conduct creates a credible bodily-harm risk, such as entering an enclosure, but not merely because staff may need to supervise it. Ordinary public social interaction must not produce a risk flag by itself. Talking to someone, asking a question, requesting help, trick-or-treating, or inviting a stranger to a harmless game or challenge are normal IRL activities. Do not assume harassment or lack of consent merely because the participant is a stranger. Flag social interaction when the request itself calls for harassment, intimidation, coercion, following, unwanted persistence after refusal, sexual conduct, targeting minors or vulnerable people, or filming or touching without consent. Preserve an explicitly viewer-provided consequence and flag it when concerning so the owner can decide. If the viewer did not provide a consequence, return an empty string; never invent one. For a consequence, return its clearing rule: timed when the viewer states a duration and extract whole minutes; at_next_stop when it lasts until the next arrival or stop; through_next_mission when it lasts through the next mission; manual only when no automatic rule fits. When the wording is ambiguous, default to through_next_mission. Return duration 0 for non-timed rules. The public label is a poll choice of at most 25 characters that plainly restates the viewer's request. Do not make it vague or mysterious. Big chain names are fine because they don't reveal which location; leave out exact addresses and local destination names before arrival.",
               input: text,
               text: {
                 format: {

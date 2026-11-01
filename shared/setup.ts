@@ -1,3 +1,5 @@
+import { parseAutomationSettings } from "@/shared/automation"
+
 export class SetupError extends Error {
   constructor(
     public readonly code: string,
@@ -64,6 +66,7 @@ export function parseSetupUpdate(value: unknown) {
       ),
       travelMode: travelMode as "walk" | "transit" | "drive",
       llmEnabled: input.llmEnabled === true,
+      automation: parseAutomationSettings(input.automation),
       locationMaxAgeMs: 120_000,
       baseZone: {
         latitude: number(base.latitude, "invalid_base_zone", -90, 90),
@@ -100,7 +103,9 @@ export function parseSetupAction(value: unknown) {
     action !== "no_travel_on" &&
     action !== "no_travel_off" &&
     action !== "map_coarse_on" &&
-    action !== "map_coarse_off"
+    action !== "map_coarse_off" &&
+    action !== "automation_pause" &&
+    action !== "automation_resume"
   ) {
     throw new SetupError("invalid_setup_action")
   }

@@ -224,6 +224,34 @@ describe("mission state", () => {
     expect(completed.activeConsequences).toBeUndefined()
   })
 
+  it("caps every owed consequence at the next mission's outcome when enabled", () => {
+    const timed = nextMission(failedWith("timed", 120))
+    const arrived = transitionMission(timed, "arrive", now + 4000, {
+      capConsequences: true,
+    })
+    // The cap is not an override: the timer still runs until the outcome.
+    expect(arrived.activeConsequences).toHaveLength(1)
+    expect(
+      transitionMission(arrived, "complete", now + 5000, {
+        capConsequences: true,
+      }).activeConsequences
+    ).toBeUndefined()
+
+    const manual = transitionMission(
+      nextMission(failedWith("manual")),
+      "arrive",
+      now + 4000
+    )
+    const failed = transitionMission(manual, "fail", now + 5000, {
+      capConsequences: true,
+    })
+    // Only this mission's own new consequence remains.
+    expect(failed.activeConsequences).toBeUndefined()
+    expect(
+      transitionMission(manual, "complete", now + 5000).activeConsequences
+    ).toHaveLength(1)
+  })
+
   it("keeps a manual consequence until the owner marks it paid", () => {
     const next = nextMission(failedWith("manual"))
     const completed = transitionMission(
