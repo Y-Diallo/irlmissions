@@ -1,0 +1,211 @@
+"use client"
+
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { DEV_PITCH_PRESETS, type DevAction } from "@/shared/dev"
+import type { MissionOwnerView } from "@/shared/missions"
+import type { PollRecord } from "@/shared/polls"
+
+const presetLabels: Record<keyof typeof DEV_PITCH_PRESETS, string> = {
+  safe: "Safe place pitch",
+  consequence: "Pitch with consequence",
+  anywhere: "No-travel pitch",
+  safety: "Safety-flagged pitch",
+  automod: "AutoMod rejection",
+}
+
+export function DevPanel({
+  poll,
+  mission,
+  token,
+  refresh,
+}: {
+  poll: PollRecord | null
+  mission: MissionOwnerView | null
+  token: () => Promise<string>
+  refresh: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState("")
+  const [confirmReset, setConfirmReset] = useState(false)
+
+  async function run(action: DevAction) {
+    if (action.action === "reset" && !confirmReset) {
+      setConfirmReset(true)
+      setMessage("Tap Reset demo again to clear this demo account.")
+      return
+    }
+    setBusy(true)
+    setMessage("")
+    try {
+      const response = await fetch("/api/dev", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${await token()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(action),
+      })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.error ?? "Simulator unavailable")
+      setConfirmReset(false)
+      setMessage(
+        action.action === "inject_pitch"
+          ? "Pitch injected and processed."
+          : action.action === "add_vote"
+            ? "Vote added."
+            : action.action === "end_poll"
+              ? "Poll ended and result applied."
+              : action.action === "move_toward"
+                ? "Location moved toward the destination."
+                : action.action === "arrive"
+                  ? "Arrival samples sent."
+                  : action.action === "gps_lost"
+                    ? "GPS heartbeat stopped."
+                    : "Demo reset."
+      )
+      await refresh()
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Simulator unavailable"
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const activePoll = poll?.status === "active" ? poll : null
+  const activeMission =
+    mission?.status === "heading" || mission?.status === "arrived"
+      ? mission
+      : null
+
+  return (
+    <Card className="border-2 border-dashed border-blue-500 bg-blue-50/60">
+      <CardHeader>
+        <CardTitle className="text-lg">Demo controls</CardTitle>
+        <CardDescription>
+          Emulator only. These controls use fake providers and never contact
+          Twitch, Google, OpenAI, or RealtimeIRL.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="gap-5">
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Inject a pitch</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(
+              Object.keys(DEV_PITCH_PRESETS) as Array<
+                keyof typeof DEV_PITCH_PRESETS
+              >
+            ).map((preset) => (
+              <Button
+                key={preset}
+                variant="outline"
+                className="min-h-12 justify-start bg-white text-left"
+                disabled={busy}
+                onClick={() => void run({ action: "inject_pitch", preset })}
+              >
+                {presetLabels[preset]}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {activePoll && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Simulate Twitch voting</p>
+            <div className="grid gap-2">
+              {activePoll.choices.map((choice, index) => (
+                <Button
+                  key={choice.redemptionId}
+                  variant="outline"
+                  className="min-h-12 justify-between bg-white"
+                  disabled={busy}
+                  onClick={() =>
+                    void run({ action: "add_vote", choice: index })
+                  }
+                >
+                  <span>+1 {choice.title}</span>
+                  <span>{choice.votes ?? 0}</span>
+                </Button>
+              ))}
+            </div>
+            <Button
+              className="min-h-12 w-full"
+              disabled={busy}
+              onClick={() => void run({ action: "end_poll" })}
+            >
+              End simulated poll
+            </Button>
+          </div>
+        )}
+
+        {activeMission && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Simulate RealtimeIRL</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <Button
+                variant="outline"
+                className="min-h-12 bg-white"
+                disabled={busy || activeMission.status !== "heading"}
+                onClick={() => void run({ action: "move_toward" })}
+              >
+                Move toward
+              </Button>
+              <Button
+                variant="outline"
+                className="min-h-12 bg-white"
+                disabled={busy || activeMission.status !== "heading"}
+                onClick={() => void run({ action: "arrive" })}
+              >
+                Arrive by GPS
+              </Button>
+              <Button
+                variant="outline"
+                className="min-h-12 bg-white"
+                disabled={busy}
+                onClick={() => void run({ action: "gps_lost" })}
+              >
+                GPS lost
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {message && (
+          <p role="status" className="text-sm font-medium">
+            {message}
+          </p>
+        )}
+      </CardContent>
+      <CardFooter className="flex-col gap-2 sm:flex-row">
+        <Button
+          variant="destructive"
+          className="min-h-12 w-full sm:w-auto"
+          disabled={busy}
+          onClick={() => void run({ action: "reset" })}
+        >
+          {confirmReset ? "Tap again to reset demo" : "Reset demo"}
+        </Button>
+        {confirmReset && (
+          <Button
+            variant="outline"
+            className="min-h-12 w-full bg-white sm:w-auto"
+            disabled={busy}
+            onClick={() => setConfirmReset(false)}
+          >
+            Keep demo data
+          </Button>
+        )}
+      </CardFooter>
+    </Card>
+  )
+}

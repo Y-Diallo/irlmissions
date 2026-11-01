@@ -37,7 +37,7 @@ describe("owner mission routes", () => {
     expect(mocks.requireOwner).toHaveBeenCalledBefore(mocks.read)
   })
 
-  it.each(["arrive", "complete", "fail"])(
+  it.each(["arrive", "complete", "fail", "extend", "cancel"])(
     "applies the %s command with a server timestamp",
     async (action) => {
       mocks.requireOwner.mockResolvedValue({ uid: "twitch:42", tenantId: "42" })

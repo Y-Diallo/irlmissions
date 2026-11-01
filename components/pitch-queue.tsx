@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MissionCard } from "@/components/mission-card"
+import { DevPanel } from "@/components/dev-panel"
 import {
   Card,
   CardAction,
@@ -19,10 +20,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { PitchReviewItem, ReviewCommand } from "@/shared/pitches/review"
 import type { TravelMode } from "@/shared/pitches/processor"
-import {
-  DEFAULT_POLL_DURATION_SECONDS,
-  type PollRecord,
-} from "@/shared/polls"
+import { DEFAULT_POLL_DURATION_SECONDS, type PollRecord } from "@/shared/polls"
 import type { MissionAction, MissionOwnerView } from "@/shared/missions"
 
 const errors: Record<string, string> = {
@@ -57,6 +55,12 @@ const errors: Record<string, string> = {
   mission_not_arrived:
     "Mark the destination as arrived before choosing an outcome.",
   mission_finished: "This mission already has an outcome.",
+  mission_not_cancelable:
+    "This mission has already started. Mark it complete or failed instead.",
+  stream_mission_needs_outcome:
+    "This mission has started. Mark it complete or failed, then end the stream.",
+  stream_poll_needs_reconciliation:
+    "Reconcile the uncertain Twitch poll before ending the stream.",
   unauthorized: "Your owner session ended. Sign in again.",
 }
 
@@ -137,9 +141,7 @@ function PitchCard({
   useEffect(() => {
     const previous = serverRawText.current
     serverRawText.current = pitch.rawText
-    setRawText((current) =>
-      current === previous ? pitch.rawText : current
-    )
+    setRawText((current) => (current === previous ? pitch.rawText : current))
   }, [pitch.rawText])
 
   useEffect(() => {
@@ -195,7 +197,7 @@ function PitchCard({
       pitch.publicLabel || pitch.challenge || pitch.rawText || "Mission"
     return (
       <Card size="sm" className="gap-0 border-border/70 py-3 shadow-none">
-        <CardHeader className="gap-0 px-4 [grid-template-columns:minmax(0,1fr)_auto]">
+        <CardHeader className="[grid-template-columns:minmax(0,1fr)_auto] gap-0 px-4">
           <CardTitle className="truncate pr-2 text-base">{summary}</CardTitle>
           <CardDescription className="truncate text-xs">
             {pitch.viewerName}
@@ -412,7 +414,9 @@ function PitchCard({
                 />
               </div>
               <div className="grid content-start gap-2">
-                <Label htmlFor={`duration-${pitch.redemptionId}`}>Minutes</Label>
+                <Label htmlFor={`duration-${pitch.redemptionId}`}>
+                  Minutes
+                </Label>
                 <Input
                   id={`duration-${pitch.redemptionId}`}
                   type="number"
@@ -549,10 +553,14 @@ export function PitchQueue() {
   const [pollBusy, setPollBusy] = useState(false)
   const [pollMessage, setPollMessage] = useState("")
   const [noTravelMode, setNoTravelMode] = useState(false)
+  const [mapCoarseMode, setMapCoarseMode] = useState(false)
   const [pollDuration, setPollDuration] = useState(
     String(DEFAULT_POLL_DURATION_SECONDS)
   )
   const [modeBusy, setModeBusy] = useState(false)
+  const [endStreamBusy, setEndStreamBusy] = useState(false)
+  const [confirmEndStream, setConfirmEndStream] = useState(false)
+  const [endStreamMessage, setEndStreamMessage] = useState("")
 
   async function toggleNoTravelMode(enabled: boolean) {
     setModeBusy(true)
@@ -573,6 +581,29 @@ export function PitchQueue() {
       setNoTravelMode(result.noTravelMode === true)
     } catch {
       setMessage("Could not change no-travel mode. Try again.")
+    } finally {
+      setModeBusy(false)
+    }
+  }
+  async function toggleMapCoarseMode(enabled: boolean) {
+    setModeBusy(true)
+    setMessage("")
+    try {
+      const response = await fetch("/api/setup", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${await token()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: enabled ? "map_coarse_on" : "map_coarse_off",
+        }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? "unavailable")
+      setMapCoarseMode(result.mapCoarseMode === true)
+    } catch {
+      setMessage("Could not change map privacy mode. Try again.")
     } finally {
       setModeBusy(false)
     }
@@ -631,6 +662,7 @@ export function PitchQueue() {
       }
       setPitches(nextPitches)
       setNoTravelMode(pitchBody.noTravelMode === true)
+      setMapCoarseMode(pitchBody.mapCoarseMode === true)
       setPoll(pollBody.poll)
       setMission(missionBody.mission)
       setSelected((current) => {
@@ -650,7 +682,7 @@ export function PitchQueue() {
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [setMessage, setWarningToast, token])
 
   useEffect(() => {
     if (!warningToast) return
@@ -814,6 +846,43 @@ export function PitchQueue() {
     setSelected(new Set())
     await refresh()
   }
+
+  async function endStream() {
+    if (!confirmEndStream) {
+      setConfirmEndStream(true)
+      setEndStreamMessage("")
+      return
+    }
+    setEndStreamBusy(true)
+    setEndStreamMessage("")
+    try {
+      const response = await fetch("/api/stream/end", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${await token()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "end_stream" }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? "unavailable")
+      setConfirmEndStream(false)
+      setEndStreamMessage(
+        `Stream closed. ${result.refunds?.queued ?? 0} unused ${
+          result.refunds?.queued === 1 ? "pitch" : "pitches"
+        } queued for refund.`
+      )
+      await refresh()
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "unavailable"
+      setEndStreamMessage(
+        errors[code] ??
+          "Could not finish every end-stream step. Intake may already be disabled; check setup and try again."
+      )
+    } finally {
+      setEndStreamBusy(false)
+    }
+  }
   const missionInProgress =
     mission && ["heading", "arrived"].includes(mission.status)
   const selectedPitches = [...selected].flatMap((redemptionId) => {
@@ -877,6 +946,74 @@ export function PitchQueue() {
             </span>
           </span>
         </label>
+      )}
+      {signedIn && (
+        <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
+          <input
+            type="checkbox"
+            className="size-5 accent-primary"
+            checked={mapCoarseMode}
+            disabled={modeBusy}
+            onChange={(event) => void toggleMapCoarseMode(event.target.checked)}
+          />
+          <span>
+            <span className="font-medium">Hide live map position</span>
+            <span className="block text-sm text-muted-foreground">
+              Shows the same coarse map used for unavailable GPS, with no marker
+              or trail.
+            </span>
+          </span>
+        </label>
+      )}
+      {signedIn && process.env.NEXT_PUBLIC_APP_MODE === "emulator" && (
+        <DevPanel
+          poll={poll}
+          mission={mission}
+          token={token}
+          refresh={refresh}
+        />
+      )}
+      {signedIn && (
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="text-lg">End stream</CardTitle>
+            <CardDescription>
+              Disables new pitches, cancels voting, cancels an unstarted
+              mission, and queues every unused redemption for refund.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="gap-3">
+            {endStreamMessage && (
+              <p role="status" className="text-sm text-muted-foreground">
+                {endStreamMessage}
+              </p>
+            )}
+          </CardContent>
+          <CardFooter className="flex-col gap-2 sm:flex-row">
+            <Button
+              variant="destructive"
+              className="min-h-14 w-full text-base sm:w-auto"
+              disabled={endStreamBusy}
+              onClick={() => void endStream()}
+            >
+              {endStreamBusy
+                ? "Ending stream…"
+                : confirmEndStream
+                  ? "Tap again to end stream"
+                  : "End stream"}
+            </Button>
+            {confirmEndStream && (
+              <Button
+                variant="outline"
+                className="min-h-12 w-full sm:w-auto"
+                disabled={endStreamBusy}
+                onClick={() => setConfirmEndStream(false)}
+              >
+                Keep streaming
+              </Button>
+            )}
+          </CardFooter>
+        </Card>
       )}
       {signedIn && mission && (
         <MissionCard mission={mission} onAction={missionAction} />

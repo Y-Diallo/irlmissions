@@ -18,6 +18,7 @@ import { getServerFirebase } from "@/lib/firebase/admin"
 import type { PendingPollEnd } from "@/shared/eventsub"
 import { createPollEndStore } from "@/lib/polls/end-store"
 import { createPollStore } from "@/lib/polls/store"
+import { readServerConfig } from "@/shared/config"
 
 type PollStore = ReturnType<typeof createPollStore>
 
@@ -160,10 +161,67 @@ export async function endLivePoll(tenantId: string) {
   return { poll: await deps.store.read() }
 }
 
+/** Ends Twitch voting without selecting a winner, then unlocks every choice. */
+export async function cancelLivePoll(tenantId: string) {
+  if (readServerConfig(process.env).mode === "emulator") {
+    const store = createPollStore(getServerFirebase().db, tenantId)
+    const record = await store.read()
+    if (!record || (record.status !== "active" && record.status !== "tie")) {
+      throw new PollError("poll_not_cancelable")
+    }
+    return store.cancelAndUnlock(record.attemptId, Date.now())
+  }
+  const deps = await liveDependencies(tenantId)
+  const record = await deps.store.read()
+  if (!record || (record.status !== "active" && record.status !== "tie")) {
+    throw new PollError("poll_not_cancelable")
+  }
+  if (record.status === "active") {
+    if (!record.twitchPollId) throw new PollError("poll_not_cancelable")
+    try {
+      const ended = await deps.provider.end(record.twitchPollId)
+      if (ended.status === "ACTIVE") {
+        throw new PollError("poll_still_active", 503)
+      }
+    } catch (error) {
+      if (!(error instanceof PollProviderError)) throw error
+      const recent = await deps.provider.listRecent().catch(() => [])
+      const found = recent.find((poll) => poll.id === record.twitchPollId)
+      if (!found || found.status === "ACTIVE") {
+        throw new PollError(error.code, error.status)
+      }
+    }
+  }
+  return deps.store.cancelAndUnlock(record.attemptId, deps.now())
+}
+
 export async function startLivePoll(
   tenantId: string,
   command: StartPollCommand
 ) {
+  if (readServerConfig(process.env).mode === "emulator") {
+    const store = createPollStore(getServerFirebase().db, tenantId)
+    const now = Date.now()
+    const attemptId = opaqueId()
+    const record = await store.reserve(command, attemptId, now)
+    return store.attach(
+      attemptId,
+      {
+        id: `demo-poll-${attemptId}`,
+        broadcasterId: tenantId,
+        title: record.title,
+        status: "ACTIVE",
+        durationSeconds: record.durationSeconds,
+        startedAt: now,
+        choices: record.choices.map((choice, index) => ({
+          id: `demo-choice-${index + 1}`,
+          title: choice.title,
+          votes: 0,
+        })),
+      },
+      now
+    )
+  }
   return startPoll(command, await liveDependencies(tenantId))
 }
 

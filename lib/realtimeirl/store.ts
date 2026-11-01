@@ -1,6 +1,6 @@
 import "server-only"
 
-import type { Firestore } from "firebase-admin/firestore"
+import { FieldValue, type Firestore } from "firebase-admin/firestore"
 import { missionOverlay } from "@/shared/overlay"
 import {
   evaluateRealtimeIrlArrival,
@@ -87,6 +87,7 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
           latitude: sample.latitude,
           longitude: sample.longitude,
           observedAt: sample.observedAt,
+          accuracyMeters: sample.accuracyMeters ?? FieldValue.delete(),
           receivedAt: now,
           feedHeartbeatAt: now,
           source: "realtimeirl",

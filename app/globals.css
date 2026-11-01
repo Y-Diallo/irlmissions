@@ -47,6 +47,63 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+.map-source {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family: Arial, Helvetica, sans-serif;
+  transition: opacity 180ms ease;
+}
+
+.map-source--hidden {
+  opacity: 0;
+}
+
+.map-source__canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.map-source__label,
+.map-source__warning {
+  position: absolute;
+  z-index: 2;
+  border: 4px solid #111827;
+  background: #facc15;
+  color: #111827;
+  box-shadow: 8px 8px 0 #111827;
+}
+
+.map-source__label {
+  top: 28px;
+  left: 28px;
+  display: grid;
+  min-width: 260px;
+  padding: 16px 20px;
+}
+
+.map-source__label strong {
+  font-size: 28px;
+  font-weight: 900;
+  text-shadow: 2px 2px 0 #fff;
+}
+
+.map-source__label span {
+  margin-top: 3px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.map-source__warning {
+  right: 28px;
+  bottom: 28px;
+  padding: 10px 14px;
+  background: #fff;
+  font-weight: 800;
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

@@ -35,6 +35,7 @@ export function SetupConsole() {
   const [view, setView] = useState<SetupView | null>(null)
   const [message, setMessage] = useState("Sign in, then load setup.")
   const [overlayUrl, setOverlayUrl] = useState("")
+  const [mapUrl, setMapUrl] = useState("")
   const [busy, setBusy] = useState(false)
   const [travelMode, setTravelMode] = useState<TravelMode>("walk")
   const [llmEnabled, setLlmEnabled] = useState(true)
@@ -103,6 +104,7 @@ export function SetupConsole() {
       const body = await response.json()
       if (!response.ok) throw new Error(body.error ?? "Setup action failed")
       if (typeof body.overlayUrl === "string") setOverlayUrl(body.overlayUrl)
+      if (typeof body.mapUrl === "string") setMapUrl(body.mapUrl)
       setMessage(
         value === "rotate_overlay"
           ? "New OBS URL generated. Save it now; the secret is shown once."
@@ -274,9 +276,20 @@ export function SetupConsole() {
           {view?.overlayConfigured ? "Regenerate OBS URL" : "Generate OBS URL"}
         </Button>
         {overlayUrl && (
-          <p className="mt-3 rounded bg-muted p-3 font-mono text-sm break-all">
-            {overlayUrl}
-          </p>
+          <div className="mt-3 space-y-3">
+            <div>
+              <p className="mb-1 text-sm font-medium">Objectives overlay</p>
+              <p className="rounded bg-muted p-3 font-mono text-sm break-all">
+                {overlayUrl}
+              </p>
+            </div>
+            <div>
+              <p className="mb-1 text-sm font-medium">Optional live map</p>
+              <p className="rounded bg-muted p-3 font-mono text-sm break-all">
+                {mapUrl}
+              </p>
+            </div>
+          </div>
         )}
       </section>
       {message && <p role="status">{message}</p>}

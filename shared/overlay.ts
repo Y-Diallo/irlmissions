@@ -117,6 +117,9 @@ function revealedPlace(mission: MissionRecord): RevealedPlace {
 }
 
 export function missionOverlay(mission: MissionRecord): OverlayProjection {
+  if (mission.status === "canceled") {
+    return idleOverlay(mission.updatedAt)
+  }
   if (mission.status === "heading") {
     return {
       state: "heading",

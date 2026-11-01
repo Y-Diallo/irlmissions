@@ -1,7 +1,7 @@
 import "server-only"
 import { FieldValue, type Firestore } from "firebase-admin/firestore"
 import { eventSubStorageId } from "@/shared/eventsub"
-import { votingOverlay } from "@/shared/overlay"
+import { idleOverlay, votingOverlay } from "@/shared/overlay"
 import {
   PollError,
   attachTwitchPoll,
@@ -134,6 +134,45 @@ export function createPollStore(db: Firestore, tenantId: string) {
           updatedAt: now,
         }
         tx.set(sessionRef, { poll }, { merge: true })
+        for (const snapshot of snapshots) {
+          if (snapshot.data()?.lockedBy === current.lockId) {
+            tx.update(snapshot.ref, {
+              lockedBy: FieldValue.delete(),
+              updatedAt: now,
+            })
+          }
+        }
+        return poll
+      })
+    },
+
+    cancelAndUnlock(attemptId: string, now: number) {
+      return db.runTransaction(async (tx) => {
+        const session = await tx.get(sessionRef)
+        const current = pollFromSession(session.data())
+        if (!current || current.attemptId !== attemptId) {
+          throw new PollError("poll_attempt_stale")
+        }
+        if (current.status === "canceled") return current
+        if (current.status !== "active" && current.status !== "tie") {
+          throw new PollError("poll_not_cancelable")
+        }
+        const snapshots = []
+        for (const choice of current.choices) {
+          snapshots.push(
+            await tx.get(pitchRef(db, tenantId, choice.redemptionId))
+          )
+        }
+        const { tiedRedemptionIds: _tied, ...rest } = current
+        const poll: PollRecord = {
+          ...rest,
+          status: "canceled",
+          errorCode: "owner_ended_stream",
+          endedAt: now,
+          updatedAt: now,
+        }
+        tx.set(sessionRef, { poll }, { merge: true })
+        tx.set(publicStateRef, idleOverlay(now))
         for (const snapshot of snapshots) {
           if (snapshot.data()?.lockedBy === current.lockId) {
             tx.update(snapshot.ref, {

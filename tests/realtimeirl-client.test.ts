@@ -36,7 +36,7 @@ describe("RealtimeIRL browser adapter", () => {
       heartRate: 80,
     })
     listeners.location({
-      location: { latitude: 37.7801, longitude: -122.41 },
+      location: { latitude: 37.7801, longitude: -122.41, accuracy: 14 },
       reportedAt: 101,
     })
     expect(onLocation).toHaveBeenCalledTimes(2)
@@ -44,6 +44,7 @@ describe("RealtimeIRL browser adapter", () => {
       latitude: 37.7801,
       longitude: -122.41,
       observedAt: 101,
+      accuracyMeters: 14,
     })
     stop()
     expect(unsubscribeLocation).toHaveBeenCalledOnce()

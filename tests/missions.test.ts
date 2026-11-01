@@ -144,6 +144,19 @@ describe("mission state", () => {
     )
   })
 
+  it("cancels only before arrival", () => {
+    const canceled = transitionMission(mission(), "cancel", now + 1000)
+    expect(canceled).toMatchObject({
+      status: "canceled",
+      outcomeAt: now + 1000,
+    })
+    expect(transitionMission(canceled, "cancel", now + 2000)).toBe(canceled)
+    const arrived = transitionMission(mission(), "arrive", now + 1000)
+    expect(() => transitionMission(arrived, "cancel", now + 2000)).toThrow(
+      "mission_not_cancelable"
+    )
+  })
+
   it("builds explicit walking links without calling an external API", () => {
     const links = missionNavigation(pitch.destination)
     expect(links.googleMaps).toContain("travelmode=walking")
@@ -163,9 +176,9 @@ describe("mission state", () => {
       transitionMission(mission(), "extend", now + 500).durationMinutes
     ).toBe(15)
     const arrived = transitionMission(mission(), "arrive", now + 1000)
-    expect(
-      transitionMission(arrived, "extend", now + 2000).timerEndsAt
-    ).toBe(now + 901_000)
+    expect(transitionMission(arrived, "extend", now + 2000).timerEndsAt).toBe(
+      now + 901_000
+    )
     // Past the end, the extra five minutes count from now.
     expect(
       transitionMission(arrived, "extend", now + 700_000).timerEndsAt
@@ -176,12 +189,13 @@ describe("mission state", () => {
     )
   })
 
-  it("accepts only the four owner actions", () => {
+  it("accepts only the five owner actions", () => {
     expect(parseMissionAction({ action: "arrive" })).toBe("arrive")
     expect(parseMissionAction({ action: "complete" })).toBe("complete")
     expect(parseMissionAction({ action: "fail" })).toBe("fail")
     expect(parseMissionAction({ action: "extend" })).toBe("extend")
-    expect(() => parseMissionAction({ action: "cancel" })).toThrow(
+    expect(parseMissionAction({ action: "cancel" })).toBe("cancel")
+    expect(() => parseMissionAction({ action: "skip" })).toThrow(
       "invalid_mission_action"
     )
   })

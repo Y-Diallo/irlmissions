@@ -1,7 +1,7 @@
 import "server-only"
 import { FieldValue, type Firestore } from "firebase-admin/firestore"
 import { eventSubStorageId } from "@/shared/eventsub"
-import { missionOverlay } from "@/shared/overlay"
+import { idleOverlay, missionOverlay } from "@/shared/overlay"
 import type { PollRecord } from "@/shared/polls"
 import {
   createMissionFromPick,
@@ -121,7 +121,9 @@ export function createMissionStore(db: Firestore, tenantId: string) {
         const next = transitionMission(current, action, now)
         if (next === current) return toMissionOwnerView(current)
 
-        const terminal = next.status === "completed" || next.status === "failed"
+        const canceled = next.status === "canceled"
+        const terminal =
+          canceled || next.status === "completed" || next.status === "failed"
         const pitchRef = db.doc(
           tenantDoc(
             tenantId,
@@ -136,14 +138,18 @@ export function createMissionStore(db: Firestore, tenantId: string) {
         }
 
         tx.set(sessionRef, { mission: next }, { merge: true })
-        tx.set(publicStateRef, missionOverlay(next))
+        tx.set(
+          publicStateRef,
+          canceled ? idleOverlay(now) : missionOverlay(next)
+        )
         if (terminal) {
           tx.update(pitchRef, {
-            reviewStatus: next.status,
+            reviewStatus: canceled ? "rejected" : next.status,
             lockedBy: FieldValue.delete(),
             missionOutcomeAt: now,
+            ...(canceled ? { rejectionReason: "mission_canceled" } : {}),
             redemptionResolution: {
-              action: "fulfill",
+              action: canceled ? "refund" : "fulfill",
               status: "pending",
               attempts: 0,
               nextAttemptAt: now,

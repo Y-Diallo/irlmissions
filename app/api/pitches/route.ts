@@ -22,7 +22,11 @@ export async function GET(request: Request) {
       db.doc(tenantDoc(owner.tenantId, "settings/current")).get(),
     ])
     return NextResponse.json(
-      { pitches, noTravelMode: settings.data()?.noTravelMode === true },
+      {
+        pitches,
+        noTravelMode: settings.data()?.noTravelMode === true,
+        mapCoarseMode: settings.data()?.mapCoarseMode === true,
+      },
       { headers: NO_STORE }
     )
   } catch (error) {

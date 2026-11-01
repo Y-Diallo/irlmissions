@@ -32,6 +32,7 @@ describe("overlay read route", () => {
       state: "heading",
       updatedAt: 1,
       objective: "Go",
+      chosenBy: "Chat",
     })
     const response = await GET(
       new Request(url, { headers: { authorization: `Bearer ${key}` } })
@@ -69,5 +70,4 @@ describe("overlay read route", () => {
     expect(mocks.getServerFirebase).not.toHaveBeenCalled()
     expect(mocks.read).not.toHaveBeenCalled()
   })
-
 })

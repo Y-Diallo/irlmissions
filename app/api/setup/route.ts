@@ -92,6 +92,13 @@ export async function POST(request: Request) {
         .set({ noTravelMode }, { merge: true })
       return NextResponse.json({ noTravelMode }, { headers: NO_STORE })
     }
+    if (action === "map_coarse_on" || action === "map_coarse_off") {
+      const mapCoarseMode = action === "map_coarse_on"
+      await db
+        .doc(tenantDoc(owner.tenantId, "settings/current"))
+        .set({ mapCoarseMode }, { merge: true })
+      return NextResponse.json({ mapCoarseMode }, { headers: NO_STORE })
+    }
     if (action === "retry_twitch") {
       const { createIntegrationStore } =
         await import("@/lib/integrations/store")
@@ -136,9 +143,11 @@ export async function POST(request: Request) {
       owner.tenantId,
       Date.now()
     )
+    const origin = publicRequestOrigin(request)
     return NextResponse.json(
       {
-        overlayUrl: `${publicRequestOrigin(request)}/overlay/${credential.overlayId}#${credential.secret}`,
+        overlayUrl: `${origin}/overlay/${credential.overlayId}#${credential.secret}`,
+        mapUrl: `${origin}/map/${credential.overlayId}#${credential.secret}`,
       },
       { headers: NO_STORE }
     )

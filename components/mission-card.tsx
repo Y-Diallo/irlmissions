@@ -38,6 +38,7 @@ function statusLabel(mission: MissionOwnerView) {
   if (mission.status === "heading") return "Heading there"
   if (mission.status === "arrived") return "Mission active"
   if (mission.status === "completed") return "Completed"
+  if (mission.status === "canceled") return "Canceled"
   return "Failed"
 }
 
@@ -48,15 +49,18 @@ export function MissionCard({
   mission: MissionOwnerView
   onAction: (action: MissionAction) => Promise<void>
 }) {
-  const [now, setNow] = useState(Date.now())
+  const [now, setNow] = useState(mission.updatedAt)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
 
   useEffect(() => {
     if (mission.status !== "arrived") return
-    setNow(Date.now())
+    const initial = setTimeout(() => setNow(Date.now()), 0)
     const interval = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(interval)
+    return () => {
+      clearTimeout(initial)
+      clearInterval(interval)
+    }
   }, [mission.status, mission.timerEndsAt])
 
   async function act(action: MissionAction) {
@@ -77,7 +81,10 @@ export function MissionCard({
 
   const { destination, walkingRoute, navigation } = mission
   const remaining = (mission.timerEndsAt ?? now) - now
-  const terminal = mission.status === "completed" || mission.status === "failed"
+  const terminal =
+    mission.status === "completed" ||
+    mission.status === "failed" ||
+    mission.status === "canceled"
 
   return (
     <Card className="border-primary/30 shadow-sm">
@@ -199,7 +206,9 @@ export function MissionCard({
           <Alert>
             <AlertTitle>Mission closed</AlertTitle>
             <AlertDescription>
-              Redemption fulfillment is queued for the Twitch resolution slice.
+              {mission.status === "canceled"
+                ? "The Channel Points refund is queued for Twitch."
+                : "Redemption fulfillment is queued for Twitch."}
             </AlertDescription>
           </Alert>
         )}
@@ -222,13 +231,23 @@ export function MissionCard({
               ` (${mission.durationMinutes} min mission)`}
           </Button>
           {mission.status === "heading" ? (
-            <Button
-              className="col-span-full min-h-14 w-full text-lg"
-              disabled={busy}
-              onClick={() => void act("arrive")}
-            >
-              I&apos;ve arrived — start timer
-            </Button>
+            <>
+              <Button
+                className="min-h-14 w-full text-lg"
+                disabled={busy}
+                onClick={() => void act("arrive")}
+              >
+                I&apos;ve arrived — start timer
+              </Button>
+              <Button
+                variant="destructive"
+                className="min-h-14 w-full text-lg"
+                disabled={busy}
+                onClick={() => void act("cancel")}
+              >
+                Cancel and refund
+              </Button>
+            </>
           ) : (
             <>
               <Button

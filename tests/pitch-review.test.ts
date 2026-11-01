@@ -161,9 +161,10 @@ describe("pitch review transitions", () => {
       now
     )
     expect(forced.values).toEqual({ noTravel: true, updatedAt: now })
-    expect(
-      toPitchReviewItem({ ...record(), noTravel: true })
-    ).toMatchObject({ anywhere: true, noTravel: true })
+    expect(toPitchReviewItem({ ...record(), noTravel: true })).toMatchObject({
+      anywhere: true,
+      noTravel: true,
+    })
     expect(() =>
       transitionPitchReview(
         record({ destination: null, noTravel: true }),
@@ -329,7 +330,14 @@ describe("pitch review transitions", () => {
     })
     expect(() =>
       transitionPitchReview(
-        record({ reviewStatus: "rejected" }),
+        record({
+          reviewStatus: "rejected",
+          redemptionResolution: {
+            action: "refund",
+            status: "processing",
+            attempts: 1,
+          },
+        }),
         { action: "edit_raw", rawText: "Try to reuse refunded pitch" },
         now
       )

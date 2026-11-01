@@ -98,7 +98,9 @@ export function parseSetupAction(value: unknown) {
     action !== "enable_reward" &&
     action !== "disable_reward" &&
     action !== "no_travel_on" &&
-    action !== "no_travel_off"
+    action !== "no_travel_off" &&
+    action !== "map_coarse_on" &&
+    action !== "map_coarse_off"
   ) {
     throw new SetupError("invalid_setup_action")
   }

@@ -1,7 +1,8 @@
 import type { PlaceCandidate, WalkingRoute } from "@/shared/pitches/processor"
 import type { PollRecord } from "@/shared/polls"
 
-export type MissionStatus = "heading" | "arrived" | "completed" | "failed"
+export type MissionStatus =
+  "heading" | "arrived" | "completed" | "failed" | "canceled"
 
 export type MissionRecord = {
   missionId: string
@@ -40,7 +41,7 @@ export type MissionPitch = {
   noTravel?: unknown
 }
 
-export type MissionAction = "arrive" | "complete" | "fail" | "extend"
+export type MissionAction = "arrive" | "complete" | "fail" | "extend" | "cancel"
 
 export const EXTEND_MS = 5 * 60_000
 
@@ -106,9 +107,7 @@ function validWalkingRoute(value: unknown): WalkingRoute {
     distanceMeters: route.distanceMeters,
     durationSeconds: route.durationSeconds,
     mode:
-      mode === "transit" || mode === "drive" || mode === "walk"
-        ? mode
-        : "walk",
+      mode === "transit" || mode === "drive" || mode === "walk" ? mode : "walk",
   }
 }
 
@@ -224,7 +223,8 @@ export function parseMissionAction(value: unknown): MissionAction {
     action !== "arrive" &&
     action !== "complete" &&
     action !== "fail" &&
-    action !== "extend"
+    action !== "extend" &&
+    action !== "cancel"
   ) {
     throw new MissionError("invalid_mission_action", 400)
   }
@@ -236,6 +236,18 @@ export function transitionMission(
   action: MissionAction,
   now: number
 ): MissionRecord {
+  if (action === "cancel") {
+    if (record.status === "canceled") return record
+    if (record.status !== "heading") {
+      throw new MissionError("mission_not_cancelable")
+    }
+    return {
+      ...record,
+      status: "canceled",
+      outcomeAt: now,
+      updatedAt: now,
+    }
+  }
   if (action === "arrive") {
     if (record.status === "arrived") return record
     if (record.status !== "heading") throw new MissionError("mission_finished")
@@ -269,7 +281,11 @@ export function transitionMission(
   }
   const target = action === "complete" ? "completed" : "failed"
   if (record.status === target) return record
-  if (record.status === "completed" || record.status === "failed") {
+  if (
+    record.status === "completed" ||
+    record.status === "failed" ||
+    record.status === "canceled"
+  ) {
     throw new MissionError("mission_finished")
   }
   if (record.status !== "arrived") {
@@ -289,11 +305,7 @@ export function missionNavigation(
 ) {
   const coordinates = `${destination.latitude},${destination.longitude}`
   const googleMode =
-    mode === "drive"
-      ? "driving"
-      : mode === "transit"
-        ? "transit"
-        : "walking"
+    mode === "drive" ? "driving" : mode === "transit" ? "transit" : "walking"
   const appleMode = mode === "drive" ? "d" : mode === "transit" ? "r" : "w"
   return {
     googleMaps: `https://www.google.com/maps/dir/?${new URLSearchParams({

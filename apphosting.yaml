@@ -74,6 +74,13 @@ env:
     secret: GOOGLE_MAPS_API_KEY
     availability:
       - RUNTIME
+  # Public browser key restricted to Maps JavaScript API and this hosting
+  # origin. It is intentionally separate from the server Places/Routes key.
+  - variable: NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
+    secret: GOOGLE_MAPS_BROWSER_KEY
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: OPENAI_API_KEY
     secret: OPENAI_API_KEY
     availability:

@@ -6,7 +6,10 @@ export const DEFAULT_ARRIVAL_SAMPLE_SPAN_MS = 10_000
 export const DEFAULT_LOCATION_MAX_AGE_MS = 30_000
 const MAX_FUTURE_SKEW_MS = 5_000
 
-export type RealtimeIrlSample = Coordinates & { observedAt: number }
+export type RealtimeIrlSample = Coordinates & {
+  observedAt: number
+  accuracyMeters?: number
+}
 
 export type ArrivalSettings = {
   baseZone: Coordinates & { radiusMeters: number }
@@ -78,17 +81,28 @@ export function parseRealtimeIrlSample(value: unknown): RealtimeIrlSample {
   const latitude = finiteNumber(input.latitude, "invalid_location_sample")
   const longitude = finiteNumber(input.longitude, "invalid_location_sample")
   const observedAt = finiteNumber(input.observedAt, "invalid_location_sample")
+  const accuracyMeters = input.accuracyMeters
   if (
     latitude < -90 ||
     latitude > 90 ||
     longitude < -180 ||
     longitude > 180 ||
     !Number.isInteger(observedAt) ||
-    observedAt < 0
+    observedAt < 0 ||
+    (accuracyMeters !== undefined &&
+      (typeof accuracyMeters !== "number" ||
+        !Number.isFinite(accuracyMeters) ||
+        accuracyMeters < 0 ||
+        accuracyMeters > 10_000))
   ) {
     throw new RealtimeIrlError("invalid_location_sample")
   }
-  return { latitude, longitude, observedAt }
+  return {
+    latitude,
+    longitude,
+    observedAt,
+    ...(typeof accuracyMeters === "number" ? { accuracyMeters } : {}),
+  }
 }
 
 export function parseArrivalSettings(value: unknown): ArrivalSettings {
@@ -168,7 +182,11 @@ export function evaluateRealtimeIrlArrival(input: {
       nextConfirmation: null,
     }
   }
-  if (mission.status === "completed" || mission.status === "failed") {
+  if (
+    mission.status === "completed" ||
+    mission.status === "failed" ||
+    mission.status === "canceled"
+  ) {
     return {
       status: "mission_finished",
       fresh: true,
