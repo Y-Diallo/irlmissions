@@ -32,7 +32,13 @@ export type PollChoice = {
 }
 
 export type PollStatus =
-  "creating" | "create_unknown" | "active" | "completed" | "canceled" | "error"
+  | "creating"
+  | "create_unknown"
+  | "active"
+  | "tie"
+  | "completed"
+  | "canceled"
+  | "error"
 
 export type PollRecord = {
   attemptId: string
@@ -48,6 +54,7 @@ export type PollRecord = {
   endedAt?: number
   errorCode?: string
   winnerRedemptionId?: string
+  tiedRedemptionIds?: string[]
 }
 
 export type TwitchPoll = {
@@ -68,6 +75,8 @@ export type PollProvider = {
     durationSeconds: number
   }): Promise<TwitchPoll>
   listRecent(): Promise<TwitchPoll[]>
+  /** Ends a live poll early with results shown (TERMINATED). */
+  end(pollId: string): Promise<TwitchPoll>
 }
 
 export type PollEnd = {
@@ -80,7 +89,15 @@ export type PollEnd = {
 export type PollResolution = {
   poll: PollRecord
   winnerRedemptionId: string | null
+  tiedRedemptionIds: string[]
   loserRedemptionIds: string[]
+}
+
+// Indexes of every choice sharing the highest vote count; none until a vote.
+export function leadingIndexes(votes: number[]) {
+  const highest = Math.max(0, ...votes)
+  if (highest === 0) return []
+  return votes.flatMap((count, index) => (count === highest ? [index] : []))
 }
 
 export class PollError extends Error {
@@ -233,14 +250,16 @@ export function resolvePollEnd(
   ) {
     throw new PollError("poll_event_mismatch", 400)
   }
-  const eligible = event.status === "completed"
-  const highestVotes = Math.max(...event.choices.map((choice) => choice.votes))
-  const winnerIndex =
-    eligible && highestVotes > 0
-      ? event.choices.findIndex((choice) => choice.votes === highestVotes)
-      : -1
-  const winnerRedemptionId =
-    winnerIndex >= 0 ? record.choices[winnerIndex]!.redemptionId : null
+  // TERMINATED means the owner ended it early with results shown; it counts.
+  const leaders =
+    event.status === "completed" || event.status === "terminated"
+      ? leadingIndexes(event.choices.map((choice) => choice.votes)).map(
+          (index) => record.choices[index]!.redemptionId
+        )
+      : []
+  // A tie waits for the owner to pick; the tied pitches stay locked.
+  const winnerRedemptionId = leaders.length === 1 ? leaders[0]! : null
+  const tiedRedemptionIds = leaders.length > 1 ? leaders : []
   const choices = record.choices.map((choice, index) => ({
     ...choice,
     votes: event.choices[index]!.votes,
@@ -248,17 +267,55 @@ export function resolvePollEnd(
   return {
     poll: {
       ...record,
-      status: winnerRedemptionId ? "completed" : "canceled",
+      status: winnerRedemptionId
+        ? "completed"
+        : tiedRedemptionIds.length
+          ? "tie"
+          : "canceled",
       choices,
       endedAt: event.endedAt,
       updatedAt: now,
       ...(winnerRedemptionId
         ? { winnerRedemptionId }
-        : { errorCode: "poll_no_winner" }),
+        : tiedRedemptionIds.length
+          ? { tiedRedemptionIds }
+          : { errorCode: "poll_no_winner" }),
     },
     winnerRedemptionId,
+    tiedRedemptionIds,
     loserRedemptionIds: record.choices
       .map((choice) => choice.redemptionId)
-      .filter((redemptionId) => redemptionId !== winnerRedemptionId),
+      .filter(
+        (redemptionId) =>
+          redemptionId !== winnerRedemptionId &&
+          !tiedRedemptionIds.includes(redemptionId)
+      ),
+  }
+}
+
+export function resolveTie(
+  record: PollRecord,
+  redemptionId: string,
+  now: number
+): PollResolution {
+  if (record.status !== "tie" || !record.tiedRedemptionIds) {
+    throw new PollError("poll_not_tied")
+  }
+  if (!record.tiedRedemptionIds.includes(redemptionId)) {
+    throw new PollError("not_a_tied_choice", 400)
+  }
+  const { tiedRedemptionIds: _tied, ...rest } = record
+  return {
+    poll: {
+      ...rest,
+      status: "completed",
+      winnerRedemptionId: redemptionId,
+      updatedAt: now,
+    },
+    winnerRedemptionId: redemptionId,
+    tiedRedemptionIds: [],
+    loserRedemptionIds: record.tiedRedemptionIds.filter(
+      (candidate) => candidate !== redemptionId
+    ),
   }
 }

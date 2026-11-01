@@ -1,19 +1,26 @@
 import "server-only"
-import { FieldValue, type Firestore } from "firebase-admin/firestore"
+import {
+  FieldValue,
+  type DocumentSnapshot,
+  type Firestore,
+  type Transaction,
+} from "firebase-admin/firestore"
 import { eventSubStorageId, type PendingPollEnd } from "@/shared/eventsub"
 import {
   createMissionFromWinner,
   MissionError,
   type MissionRecord,
 } from "@/shared/missions"
-import { idleOverlay, missionOverlay } from "@/shared/overlay"
+import { idleOverlay, missionOverlay, votingOverlay } from "@/shared/overlay"
 import {
   attachTwitchPoll,
   matchesPollAttempt,
   PollError,
   resolvePollEnd,
+  resolveTie,
   type PollEnd,
   type PollRecord,
+  type PollResolution,
   type TwitchPoll,
 } from "@/shared/polls"
 import { tenantDoc } from "@/shared/tenant"
@@ -99,19 +106,7 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
           return "ignored" as const
         }
 
-        const pitchSnapshots = []
-        for (const choice of poll.choices) {
-          pitchSnapshots.push(
-            await tx.get(
-              db.doc(
-                tenantDoc(
-                  tenantId,
-                  `pitches/${eventSubStorageId(choice.redemptionId)}`
-                )
-              )
-            )
-          )
-        }
+        const pitchSnapshots = await readPitches(tx, poll)
 
         let resolution
         try {
@@ -130,72 +125,134 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
         }
 
         let mission: MissionRecord | null = null
-        if (resolution.winnerRedemptionId) {
-          const winner = pitchSnapshots.find(
-            (snapshot) =>
-              snapshot.data()?.redemptionId === resolution.winnerRedemptionId
-          )
-          try {
-            if (!winner?.exists) throw new MissionError("winner_not_found", 500)
-            mission = createMissionFromWinner(
-              resolution.poll,
-              winner.data()!,
-              now
-            )
-          } catch (error) {
-            if (!(error instanceof MissionError)) throw error
-            tx.update(eventRef, {
-              processing: {
-                status: "error",
-                errorCode: error.code,
-                failedAt: now,
-              },
-              updatedAt: now,
-            })
-            return "error" as const
-          }
+        try {
+          mission = winningMission(resolution, pitchSnapshots, now)
+        } catch (error) {
+          if (!(error instanceof MissionError)) throw error
+          tx.update(eventRef, {
+            processing: {
+              status: "error",
+              errorCode: error.code,
+              failedAt: now,
+            },
+            updatedAt: now,
+          })
+          return "error" as const
         }
 
-        tx.set(
-          sessionRef,
-          { poll: resolution.poll, ...(mission ? { mission } : {}) },
-          { merge: true }
-        )
-        tx.set(
-          publicStateRef,
-          mission ? missionOverlay(mission) : idleOverlay(now)
-        )
-        for (const snapshot of pitchSnapshots) {
-          const redemptionId = snapshot.data()?.redemptionId
-          if (!snapshot.exists || snapshot.data()?.lockedBy !== poll.lockId) {
-            continue
-          }
-          if (redemptionId === resolution.winnerRedemptionId) {
-            tx.update(snapshot.ref, {
-              lockedBy: mission!.lockId,
-              reviewStatus: "active_mission",
-              missionId: mission!.missionId,
-              pollWonAt: now,
-              updatedAt: now,
-            })
-          } else {
-            tx.update(snapshot.ref, {
-              lockedBy: FieldValue.delete(),
-              updatedAt: now,
-            })
-          }
-        }
+        writeResolution(tx, poll.lockId, resolution, mission, pitchSnapshots, now)
+        const outcome = resolution.winnerRedemptionId
+          ? ("winner" as const)
+          : resolution.tiedRedemptionIds.length
+            ? ("tie" as const)
+            : ("no_winner" as const)
         tx.update(eventRef, {
           processing: {
             status: "complete",
-            result: resolution.winnerRedemptionId ? "winner" : "no_winner",
+            result: outcome,
             completedAt: now,
           },
           updatedAt: now,
         })
-        return resolution.winnerRedemptionId ? "winner" : "no_winner"
+        return outcome
       })
     },
+
+    // Records the result Twitch returned when the owner ended the poll early.
+    // The matching EventSub poll.end later dedupes against this document.
+    recordEarlyEnd(event: PendingPollEnd) {
+      return db.runTransaction(async (tx) => {
+        const eventRef = db.doc(
+          tenantDoc(tenantId, `pollEvents/${eventSubStorageId(event.pollId)}`)
+        )
+        if (!(await tx.get(eventRef)).exists) tx.create(eventRef, event)
+      })
+    },
+
+    // The owner breaks a tie by picking one of the tied choices.
+    chooseTieWinner(redemptionId: string, now: number) {
+      return db.runTransaction(async (tx) => {
+        const poll = currentPoll((await tx.get(sessionRef)).data())
+        if (!poll) throw new PollError("poll_not_tied")
+        const resolution = resolveTie(poll, redemptionId, now)
+        const pitchSnapshots = await readPitches(tx, poll)
+        const mission = winningMission(resolution, pitchSnapshots, now)
+        writeResolution(tx, poll.lockId, resolution, mission, pitchSnapshots, now)
+        return { poll: resolution.poll, mission }
+      })
+    },
+  }
+
+  async function readPitches(tx: Transaction, poll: PollRecord) {
+    const snapshots = []
+    for (const choice of poll.choices) {
+      snapshots.push(
+        await tx.get(
+          db.doc(
+            tenantDoc(
+              tenantId,
+              `pitches/${eventSubStorageId(choice.redemptionId)}`
+            )
+          )
+        )
+      )
+    }
+    return snapshots
+  }
+
+  function winningMission(
+    resolution: PollResolution,
+    pitchSnapshots: DocumentSnapshot[],
+    now: number
+  ) {
+    if (!resolution.winnerRedemptionId) return null
+    const winner = pitchSnapshots.find(
+      (snapshot) =>
+        snapshot.data()?.redemptionId === resolution.winnerRedemptionId
+    )
+    if (!winner?.exists) throw new MissionError("winner_not_found", 500)
+    return createMissionFromWinner(resolution.poll, winner.data()!, now)
+  }
+
+  function writeResolution(
+    tx: Transaction,
+    lockId: string,
+    resolution: PollResolution,
+    mission: MissionRecord | null,
+    pitchSnapshots: DocumentSnapshot[],
+    now: number
+  ) {
+    tx.set(
+      sessionRef,
+      { poll: resolution.poll, ...(mission ? { mission } : {}) },
+      { merge: true }
+    )
+    tx.set(
+      publicStateRef,
+      mission
+        ? missionOverlay(mission)
+        : resolution.poll.status === "tie"
+          ? votingOverlay(resolution.poll)
+          : idleOverlay(now)
+    )
+    for (const snapshot of pitchSnapshots) {
+      const redemptionId = snapshot.data()?.redemptionId
+      if (!snapshot.exists || snapshot.data()?.lockedBy !== lockId) continue
+      if (redemptionId === resolution.winnerRedemptionId) {
+        tx.update(snapshot.ref, {
+          lockedBy: mission!.lockId,
+          reviewStatus: "active_mission",
+          missionId: mission!.missionId,
+          pollWonAt: now,
+          updatedAt: now,
+        })
+      } else if (!resolution.tiedRedemptionIds.includes(redemptionId)) {
+        tx.update(snapshot.ref, {
+          lockedBy: FieldValue.delete(),
+          updatedAt: now,
+        })
+      }
+    }
   }
 }
 
@@ -213,6 +270,7 @@ export async function processPendingPollEnds(
     scanned: ids.length,
     winners: results.filter((result) => result === "winner").length,
     noWinner: results.filter((result) => result === "no_winner").length,
+    ties: results.filter((result) => result === "tie").length,
     ignored: results.filter((result) => result === "ignored").length,
     errors: results.filter((result) => result === "error").length,
   }

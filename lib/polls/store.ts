@@ -13,7 +13,7 @@ import {
 } from "@/shared/polls"
 import { tenantDoc } from "@/shared/tenant"
 
-const IN_PROGRESS = new Set(["creating", "create_unknown", "active"])
+const IN_PROGRESS = new Set(["creating", "create_unknown", "active", "tie"])
 
 function pitchRef(db: Firestore, tenantId: string, redemptionId: string) {
   return db.doc(

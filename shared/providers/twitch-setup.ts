@@ -153,6 +153,11 @@ export function createTwitchSetupProvider(
         version: "1",
         condition: { broadcaster_user_id: config.broadcasterId },
       },
+      {
+        type: "channel.poll.progress",
+        version: "1",
+        condition: { broadcaster_user_id: config.broadcasterId },
+      },
     ]
     for (const subscription of desired) {
       const found = existing.some((value) => {
@@ -163,7 +168,8 @@ export function createTwitchSetupProvider(
           item.version === subscription.version &&
           item.status === "enabled" &&
           condition?.broadcaster_user_id === config.broadcasterId &&
-          (subscription.type === "channel.poll.end" ||
+          (subscription.type !==
+            "channel.channel_points_custom_reward_redemption.add" ||
             condition.reward_id === rewardId)
         )
       })

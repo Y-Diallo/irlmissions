@@ -92,14 +92,24 @@ describe("pitch review transitions", () => {
     })
   })
 
-  it("rejects a public label that reveals the destination", () => {
+  it("rejects a public label that reveals the street address", () => {
     expect(() =>
       transitionPitchReview(
-        record({ publicLabel: "Demo Cafe challenge" }),
+        record({ publicLabel: "Go to 123 Demo Street" }),
         { action: "approve" },
         now
       )
     ).toThrow("public_label_reveals_destination")
+  })
+
+  it("allows a public label that names the business", () => {
+    expect(
+      transitionPitchReview(
+        record({ publicLabel: "Demo Cafe challenge" }),
+        { action: "approve" },
+        now
+      ).values
+    ).toMatchObject({ reviewStatus: "approved" })
   })
 
   it("blocks every mutation while a poll or mission owns the pitch", () => {

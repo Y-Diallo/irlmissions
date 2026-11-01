@@ -77,6 +77,7 @@ function fixture(overrides: Partial<PollProvider> = {}) {
     listRecent: vi.fn(
       (overrides.listRecent ?? (async () => [])) as PollProvider["listRecent"]
     ),
+    end: vi.fn((async () => twitchPoll) as PollProvider["end"]),
   }
   const deps = {
     store,

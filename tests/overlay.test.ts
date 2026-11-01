@@ -4,6 +4,7 @@ import type { PollRecord } from "@/shared/polls"
 import {
   idleOverlay,
   missionOverlay,
+  tallyOverlay,
   toOverlayView,
   votingOverlay,
 } from "@/shared/overlay"
@@ -64,11 +65,89 @@ describe("public overlay projection", () => {
       updatedAt: now,
       title: "What should we do next?",
       choices: [
-        { position: 1, title: "Mystery food challenge" },
-        { position: 2, title: "Find something blue" },
+        { position: 1, title: "Mystery food challenge", votes: 0 },
+        { position: 2, title: "Find something blue", votes: 0 },
       ],
     })
     expect(JSON.stringify(projection)).not.toContain("secret-")
+  })
+
+  it("applies live tallies without lowering counts, then final counts", () => {
+    const voting = votingOverlay(poll)
+    const live = tallyOverlay(
+      voting,
+      {
+        choices: [
+          { title: "Mystery food challenge", votes: 3 },
+          { title: "Find something blue", votes: 1 },
+        ],
+        ended: false,
+      },
+      now + 1000
+    )
+    expect(live).toMatchObject({
+      choices: [{ votes: 3 }, { votes: 1 }],
+    })
+    expect(live).not.toHaveProperty("ended")
+    const stale = tallyOverlay(
+      live,
+      {
+        choices: [
+          { title: "Mystery food challenge", votes: 2 },
+          { title: "Find something blue", votes: 2 },
+        ],
+        ended: false,
+      },
+      now + 2000
+    )
+    expect(stale).toMatchObject({ choices: [{ votes: 3 }, { votes: 2 }] })
+    const final = tallyOverlay(
+      stale,
+      {
+        choices: [
+          { title: "Mystery food challenge", votes: 4 },
+          { title: "Find something blue", votes: 4 },
+        ],
+        ended: true,
+      },
+      now + 3000
+    )
+    expect(final).toMatchObject({
+      ended: true,
+      choices: [{ votes: 4 }, { votes: 4 }],
+    })
+    // A late progress event cannot reopen a closed poll.
+    expect(
+      tallyOverlay(
+        final,
+        {
+          choices: [
+            { title: "Mystery food challenge", votes: 5 },
+            { title: "Find something blue", votes: 4 },
+          ],
+          ended: false,
+        },
+        now + 4000
+      )
+    ).toBeNull()
+    expect(
+      tallyOverlay(
+        missionOverlay(mission),
+        { choices: [], ended: false },
+        now
+      )
+    ).toBeNull()
+  })
+
+  it("shows a tied poll as ended and tied", () => {
+    expect(
+      votingOverlay({
+        ...poll,
+        status: "tie",
+        choices: poll.choices.map((choice) => ({ ...choice, votes: 2 })),
+        tiedRedemptionIds: ["secret-redemption-1", "secret-redemption-2"],
+      })
+    ).toMatchObject({ ended: true, tie: true, choices: [{ votes: 2 }, { votes: 2 }] })
   })
 
   it("hides every destination field while heading there", () => {

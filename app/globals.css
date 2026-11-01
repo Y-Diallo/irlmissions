@@ -338,6 +338,35 @@ body:has(.overlay-canvas),
   font-weight: 900;
 }
 
+.show-option-title {
+  flex: 1;
+  font-weight: 900;
+}
+
+.show-option-votes {
+  min-width: 2ch;
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.show-option-tag {
+  border: 2px solid var(--show-ink);
+  padding: 0.1rem 0.4rem;
+  color: var(--show-ink);
+  background: #ffd84d;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.show-options li.show-option--leader {
+  background: var(--show-accent);
+  transform: translateX(0.35rem);
+  transition: transform 160ms ease-out;
+}
+
 .show-live {
   display: flex;
   align-items: center;

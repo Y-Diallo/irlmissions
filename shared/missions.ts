@@ -6,6 +6,7 @@ export type MissionStatus = "heading" | "arrived" | "completed" | "failed"
 export type MissionRecord = {
   missionId: string
   lockId: string
+  /** Twitch poll ID, or "" when the owner picked the pitch directly. */
   pollId: string
   redemptionId: string
   status: MissionStatus
@@ -117,10 +118,48 @@ export function createMissionFromWinner(
   if (pitch.reviewStatus !== "approved" || pitch.lockedBy !== poll.lockId) {
     throw new MissionError("winner_not_available")
   }
+  const mission = missionFromPitch(
+    pitch,
+    `poll:${poll.twitchPollId}`,
+    poll.twitchPollId,
+    now
+  )
+  const choice = poll.choices.find(
+    (candidate) => candidate.redemptionId === pitch.redemptionId
+  )
+  if (!choice || choice.title !== mission.publicLabel) {
+    throw new MissionError("mission_label_mismatch", 500)
+  }
+  return mission
+}
+
+// The owner skips the poll and makes an approved pitch the mission directly.
+// `allowedLock` is the lock of a tied poll the pick is allowed to override.
+export function createMissionFromPick(
+  pitch: MissionPitch,
+  now: number,
+  allowedLock?: string
+): MissionRecord {
+  if (
+    pitch.reviewStatus !== "approved" ||
+    (pitch.lockedBy !== undefined && pitch.lockedBy !== allowedLock)
+  ) {
+    throw new MissionError("pitch_not_pickable")
+  }
+  return missionFromPitch(pitch, `pick:${now}`, "", now)
+}
+
+function missionFromPitch(
+  pitch: MissionPitch,
+  missionId: string,
+  pollId: string,
+  now: number
+): MissionRecord {
   const publicLabel =
     typeof pitch.publicLabel === "string" ? pitch.publicLabel.trim() : ""
   const durationMinutes = pitch.durationMinutes
   if (
+    typeof pitch.redemptionId !== "string" ||
     !publicLabel ||
     publicLabel.length > 25 ||
     !Number.isInteger(durationMinutes) ||
@@ -129,18 +168,11 @@ export function createMissionFromWinner(
   ) {
     throw new MissionError("invalid_mission_details", 500)
   }
-  const choice = poll.choices.find(
-    (candidate) => candidate.redemptionId === pitch.redemptionId
-  )
-  if (!choice || choice.title !== publicLabel) {
-    throw new MissionError("mission_label_mismatch", 500)
-  }
-  const missionId = `poll:${poll.twitchPollId}`
   return {
     missionId,
     lockId: `mission:${missionId}`,
-    pollId: poll.twitchPollId,
-    redemptionId: poll.winnerRedemptionId,
+    pollId,
+    redemptionId: pitch.redemptionId,
     status: "heading",
     publicLabel,
     durationMinutes: durationMinutes as number,

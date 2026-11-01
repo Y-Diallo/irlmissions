@@ -5,7 +5,9 @@ import {
   parseStartPollCommand,
   PollError,
   preparePollRecord,
+  leadingIndexes,
   resolvePollEnd,
+  resolveTie,
   type PollPitch,
   type TwitchPoll,
 } from "@/shared/polls"
@@ -127,7 +129,34 @@ describe("poll state", () => {
     expect(new PollError("pitch_locked").status).toBe(409)
   })
 
-  it("selects the highest vote winner and breaks ties by shortlist order", () => {
+  it("selects the single highest vote winner", () => {
+    const active = attachTwitchPoll(
+      preparePollRecord(pitches, command, "attempt-1", now),
+      twitchPoll(),
+      now + 1000
+    )
+    const resolution = resolvePollEnd(
+      active,
+      {
+        pollId: "poll-1",
+        status: "completed",
+        endedAt: now + 61_000,
+        choices: [
+          { id: "choice-1", title: "Mystery food challenge", votes: 3 },
+          { id: "choice-2", title: "Find something blue", votes: 4 },
+        ],
+      },
+      now + 62_000
+    )
+    expect(resolution.winnerRedemptionId).toBe("redemption-2")
+    expect(resolution.loserRedemptionIds).toEqual(["redemption-1"])
+    expect(resolution.poll).toMatchObject({
+      status: "completed",
+      winnerRedemptionId: "redemption-2",
+    })
+  })
+
+  it("holds a tie for the owner to pick, then resolves the pick", () => {
     const active = attachTwitchPoll(
       preparePollRecord(pitches, command, "attempt-1", now),
       twitchPoll(),
@@ -146,12 +175,56 @@ describe("poll state", () => {
       },
       now + 62_000
     )
-    expect(resolution.winnerRedemptionId).toBe("redemption-1")
-    expect(resolution.loserRedemptionIds).toEqual(["redemption-2"])
-    expect(resolution.poll).toMatchObject({
+    expect(resolution.winnerRedemptionId).toBeNull()
+    expect(resolution.tiedRedemptionIds).toEqual([
+      "redemption-1",
+      "redemption-2",
+    ])
+    expect(resolution.loserRedemptionIds).toEqual([])
+    expect(resolution.poll.status).toBe("tie")
+
+    expect(() =>
+      resolveTie(resolution.poll, "not-tied", now + 63_000)
+    ).toThrow("not_a_tied_choice")
+    const picked = resolveTie(resolution.poll, "redemption-2", now + 63_000)
+    expect(picked.winnerRedemptionId).toBe("redemption-2")
+    expect(picked.loserRedemptionIds).toEqual(["redemption-1"])
+    expect(picked.poll).toMatchObject({
       status: "completed",
-      winnerRedemptionId: "redemption-1",
+      winnerRedemptionId: "redemption-2",
     })
+    expect(picked.poll.tiedRedemptionIds).toBeUndefined()
+    expect(() =>
+      resolveTie(picked.poll, "redemption-1", now + 64_000)
+    ).toThrow("poll_not_tied")
+  })
+
+  it("counts a poll the owner ended early", () => {
+    const active = attachTwitchPoll(
+      preparePollRecord(pitches, command, "attempt-1", now),
+      twitchPoll(),
+      now + 1000
+    )
+    const resolution = resolvePollEnd(
+      active,
+      {
+        pollId: "poll-1",
+        status: "terminated",
+        endedAt: now + 20_000,
+        choices: [
+          { id: "choice-1", title: "Mystery food challenge", votes: 1 },
+          { id: "choice-2", title: "Find something blue", votes: 2 },
+        ],
+      },
+      now + 21_000
+    )
+    expect(resolution.winnerRedemptionId).toBe("redemption-2")
+  })
+
+  it("finds every leader, or none before the first vote", () => {
+    expect(leadingIndexes([0, 0, 0])).toEqual([])
+    expect(leadingIndexes([1, 3, 2])).toEqual([1])
+    expect(leadingIndexes([2, 0, 2])).toEqual([0, 2])
   })
 
   it("returns every choice to the queue for zero votes or cancellation", () => {
@@ -160,7 +233,7 @@ describe("poll state", () => {
       twitchPoll(),
       now + 1000
     )
-    for (const status of ["completed", "terminated", "archived"] as const) {
+    for (const status of ["completed", "archived"] as const) {
       const resolution = resolvePollEnd(
         active,
         {

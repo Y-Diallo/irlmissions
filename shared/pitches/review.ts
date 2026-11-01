@@ -193,13 +193,15 @@ function reviewable(record: ReviewRecord) {
   if (!record.walkingRoute) throw new PitchReviewError("route_not_ready")
 }
 
+// Chain names are allowed (they don't pinpoint a location); the owner decides
+// whether a business name is too specific. Only the street address is blocked.
 function revealsDestination(label: string, destination: PlaceCandidate) {
   const normalized = label.toLocaleLowerCase()
-  const name = destination.name.trim().toLocaleLowerCase()
   const address = destination.address.trim().toLocaleLowerCase()
+  const street = address.split(",")[0]!.trim()
   return (
-    (name.length >= 3 && normalized.includes(name)) ||
-    (address.length >= 5 && normalized.includes(address))
+    (address.length >= 5 && normalized.includes(address)) ||
+    (street.length >= 5 && normalized.includes(street))
   )
 }
 

@@ -31,7 +31,7 @@ const errors: Record<string, string> = {
   pitch_not_retryable: "This pitch does not currently need a retry.",
   redemption_not_retryable: "This Twitch redemption does not need a retry.",
   public_label_reveals_destination:
-    "The public label reveals the destination. Use a mystery objective instead.",
+    "The public label includes the street address. Remove it before approving.",
   invalid_public_label: "Public poll labels must be 1–25 characters.",
   invalid_poll_label: "Each Twitch poll choice must be 25 characters or less.",
   duplicate_poll_labels: "Poll choices must have different public labels.",
@@ -41,6 +41,10 @@ const errors: Record<string, string> = {
   twitch_poll_rejected:
     "Twitch rejected the poll. Check for another live poll.",
   mission_in_progress: "Finish the current mission before starting a poll.",
+  poll_not_tied: "That poll is no longer tied. Refresh to see the result.",
+  not_a_tied_choice: "Pick one of the tied choices.",
+  poll_not_active: "That poll already ended. Refresh to see the result.",
+  pitch_not_pickable: "Only approved pitches that aren't in a poll can be picked.",
   mission_not_arrived:
     "Mark the destination as arrived before choosing an outcome.",
   mission_finished: "This mission already has an outcome.",
@@ -97,12 +101,16 @@ function PitchCard({
   processNow,
   selected,
   toggleSelected,
+  canPick,
+  pick,
 }: {
   pitch: PitchReviewItem
   mutate: (pitch: PitchReviewItem, command: ReviewCommand) => Promise<void>
   processNow: (pitch: PitchReviewItem) => Promise<void>
   selected: boolean
   toggleSelected: (pitch: PitchReviewItem) => void
+  canPick: boolean
+  pick: (pitch: PitchReviewItem) => Promise<void>
 }) {
   const [rawText, setRawText] = useState(pitch.rawText)
   const [publicLabel, setPublicLabel] = useState(pitch.publicLabel)
@@ -274,7 +282,7 @@ function PitchCard({
             <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
               <div className="grid gap-2">
                 <Label htmlFor={`label-${pitch.redemptionId}`}>
-                  Public poll label — hide the destination
+                  Public poll label (no address or local business names)
                 </Label>
                 <Textarea
                   id={`label-${pitch.redemptionId}`}
@@ -359,6 +367,15 @@ function PitchCard({
                 onClick={() => toggleSelected(pitch)}
               >
                 {selected ? "Remove from poll" : "Add to poll"}
+              </Button>
+            )}
+            {pitch.reviewStatus === "approved" && (
+              <Button
+                className="min-h-12 w-full text-base sm:w-auto"
+                disabled={busy || !canPick}
+                onClick={() => void act(() => pick(pitch))}
+              >
+                Pick
               </Button>
             )}
             <Button
@@ -624,7 +641,27 @@ export function PitchQueue() {
   }
 
   const pollInProgress =
+    poll &&
+    ["creating", "create_unknown", "active", "tie"].includes(poll.status)
+  const tied = poll?.status === "tie" ? (poll.tiedRedemptionIds ?? []) : []
+  const pollLive =
     poll && ["creating", "create_unknown", "active"].includes(poll.status)
+
+  async function pickPitch(pitch: PitchReviewItem) {
+    const response = await fetch("/api/missions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${await token()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ redemptionId: pitch.redemptionId }),
+    })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error ?? "unavailable")
+    setMission(result.mission)
+    setSelected(new Set())
+    await refresh()
+  }
   const missionInProgress =
     mission && ["heading", "arrived"].includes(mission.status)
   const selectedPitches = [...selected].flatMap((redemptionId) => {
@@ -672,21 +709,49 @@ export function PitchQueue() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">
-              {poll?.status === "active" ? "Voting live" : "Next poll"}
+              {poll?.status === "active"
+                ? "Voting live"
+                : tied.length
+                  ? "It's a tie, you pick"
+                  : "Next poll"}
             </CardTitle>
             <CardDescription>
               {poll?.status === "active"
                 ? "Twitch chat is choosing the next objective."
+                : tied.length
+                  ? "Chat tied. Pick the mission from the tied choices."
                 : missionInProgress
                   ? "Finish the current mission before starting another poll."
-                  : "Choose 2–5 approved pitches. Poll labels never include the destination."}
+                  : "Choose 2–5 approved pitches. Poll labels never include the address."}
             </CardDescription>
           </CardHeader>
           <CardContent className="gap-3">
             {pollInProgress ? (
               <ol className="list-decimal space-y-1 pl-5 text-sm">
                 {poll.choices.map((choice) => (
-                  <li key={choice.redemptionId}>{choice.title}</li>
+                  <li key={choice.redemptionId}>
+                    {choice.title}
+                    {tied.length > 0 && (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        ({choice.votes ?? 0} votes)
+                      </span>
+                    )}
+                    {tied.includes(choice.redemptionId) && (
+                      <Button
+                        className="ml-3 min-h-10"
+                        size="sm"
+                        disabled={pollBusy}
+                        onClick={() =>
+                          void pollAction("/api/polls/tiebreak", {
+                            redemptionId: choice.redemptionId,
+                          })
+                        }
+                      >
+                        Pick this one
+                      </Button>
+                    )}
+                  </li>
                 ))}
               </ol>
             ) : selectedPitches.length ? (
@@ -726,10 +791,15 @@ export function PitchQueue() {
                 Reconcile with Twitch
               </Button>
             ) : poll?.status === "active" ? (
-              <p className="text-sm text-muted-foreground">
-                Waiting for Twitch poll completion.
-              </p>
-            ) : (
+              <Button
+                className="min-h-12 w-full text-base sm:w-auto"
+                variant="destructive"
+                disabled={pollBusy}
+                onClick={() => void pollAction("/api/polls/end")}
+              >
+                End poll now
+              </Button>
+            ) : tied.length ? null : (
               <Button
                 className="min-h-12 w-full text-base sm:w-auto"
                 disabled={
@@ -765,6 +835,12 @@ export function PitchQueue() {
             processNow={processNow}
             selected={selected.has(pitch.redemptionId)}
             toggleSelected={toggleSelected}
+            canPick={
+              !missionInProgress &&
+              !pollLive &&
+              (!pitch.locked || tied.includes(pitch.redemptionId))
+            }
+            pick={pickPitch}
           />
         ))}
       </div>

@@ -15,6 +15,7 @@ import {
 import { createTwitchPollProvider } from "@/shared/providers/twitch-polls"
 import { loadAuthDependencies } from "@/lib/auth/server"
 import { getServerFirebase } from "@/lib/firebase/admin"
+import { createPollEndStore } from "@/lib/polls/end-store"
 import { createPollStore } from "@/lib/polls/store"
 
 type PollStore = ReturnType<typeof createPollStore>
@@ -103,6 +104,38 @@ export async function reconcilePoll(deps: PollServiceDependencies) {
     reconciled: true,
     poll: await deps.store.attach(record.attemptId, recovered, deps.now()),
   }
+}
+
+export async function endLivePoll(tenantId: string) {
+  const deps = await liveDependencies(tenantId)
+  const record = await deps.store.read()
+  if (record?.status !== "active" || !record.twitchPollId) {
+    throw new PollError("poll_not_active")
+  }
+  let ended
+  try {
+    ended = await deps.provider.end(record.twitchPollId)
+  } catch (error) {
+    if (!(error instanceof PollProviderError)) throw error
+    throw new PollError(error.code, error.status)
+  }
+  const now = deps.now()
+  const endStore = createPollEndStore(getServerFirebase().db, tenantId)
+  await endStore.recordEarlyEnd({
+    pollId: ended.id,
+    sourceMessageId: "owner_end",
+    broadcasterId: tenantId,
+    title: ended.title,
+    status: "terminated",
+    choices: ended.choices,
+    startedAt: new Date(ended.startedAt).toISOString(),
+    endedAt: new Date(ended.endedAt ?? now).toISOString(),
+    processing: { status: "pending", attempts: 0, nextAttemptAt: now },
+    createdAt: now,
+    updatedAt: now,
+  })
+  await endStore.apply(ended.id, now)
+  return { poll: await deps.store.read() }
 }
 
 export async function startLivePoll(

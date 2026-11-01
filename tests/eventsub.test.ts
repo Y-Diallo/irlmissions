@@ -4,6 +4,7 @@ import {
   acceptEventSub,
   EVENTSUB_MAX_AGE_MS,
   POLL_END,
+  POLL_PROGRESS,
   REDEMPTION_ADD,
   type EventSubConfig,
   type EventSubHeaders,
@@ -176,6 +177,48 @@ describe("EventSub intake", () => {
         pollId: "poll-1",
         status: "completed",
         processing: { status: "pending", nextAttemptAt: now },
+      },
+    })
+  })
+
+  it("verifies and maps poll progress into a live tally", async () => {
+    const fixture = memoryStore()
+    const payload = {
+      subscription: {
+        id: "poll-progress-subscription-1",
+        status: "enabled",
+        type: POLL_PROGRESS,
+        version: "1",
+        condition: { broadcaster_user_id: "42" },
+      },
+      event: {
+        id: "poll-1",
+        broadcaster_user_id: "42",
+        broadcaster_user_login: "owner",
+        broadcaster_user_name: "Owner",
+        title: "What should we do next?",
+        choices: [
+          { id: "choice-1", title: "Mystery challenge", votes: 1 },
+          { id: "choice-2", title: "Find something blue", votes: 3 },
+        ],
+        started_at: "2026-10-30T17:58:00Z",
+        ends_at: "2026-10-30T17:59:00Z",
+      },
+    }
+    const raw = JSON.stringify(payload)
+    await acceptEventSub(
+      config,
+      envelope(raw, { subscriptionType: POLL_PROGRESS }),
+      { store: fixture.store, now: () => now }
+    )
+    expect(fixture.writes[0]).toMatchObject({
+      kind: "poll_progress",
+      tally: {
+        pollId: "poll-1",
+        choices: [
+          { id: "choice-1", votes: 1 },
+          { id: "choice-2", votes: 3 },
+        ],
       },
     })
   })

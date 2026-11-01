@@ -34,6 +34,7 @@ describe("automatic Twitch tenant setup", () => {
       .mockResolvedValueOnce(response(200, { data: [] }))
       .mockResolvedValueOnce(response(202, { data: [{}] }))
       .mockResolvedValueOnce(response(202, { data: [{}] }))
+      .mockResolvedValueOnce(response(202, { data: [{}] }))
 
     await expect(
       createTwitchSetupProvider(config, request).provision(undefined, async () => {
@@ -68,6 +69,10 @@ describe("automatic Twitch tenant setup", () => {
           type: "channel.poll.end",
           condition: { broadcaster_user_id: "42" },
         }),
+        expect.objectContaining({
+          type: "channel.poll.progress",
+          condition: { broadcaster_user_id: "42" },
+        }),
       ])
     )
   })
@@ -82,6 +87,12 @@ describe("automatic Twitch tenant setup", () => {
       },
       {
         type: "channel.poll.end",
+        version: "1",
+        status: "enabled",
+        condition: { broadcaster_user_id: "42" },
+      },
+      {
+        type: "channel.poll.progress",
         version: "1",
         status: "enabled",
         condition: { broadcaster_user_id: "42" },

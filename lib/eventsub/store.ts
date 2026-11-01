@@ -1,16 +1,46 @@
 import "server-only"
-import type { Firestore } from "firebase-admin/firestore"
-import type { EventSubStore } from "@/shared/eventsub"
+import type { Firestore, Transaction } from "firebase-admin/firestore"
+import type { EventSubStore, PollTally } from "@/shared/eventsub"
 import { eventSubStorageId } from "@/shared/eventsub"
+import { tallyOverlay } from "@/shared/overlay"
+import type { PollRecord } from "@/shared/polls"
 import { tenantDoc } from "@/shared/tenant"
 
 export function createEventSubStore(
   db: Firestore,
   tenantId: string
 ): EventSubStore {
+  const sessionRef = db.doc(tenantDoc(tenantId, "sessions/current"))
+  const publicStateRef = db.doc(tenantDoc(tenantId, "publicState/current"))
+
+  // Reads only; the caller writes the returned projection after its own reads.
+  async function readTally(tx: Transaction, tally: PollTally, ended: boolean) {
+    const [session, publicState] = await Promise.all([
+      tx.get(sessionRef),
+      tx.get(publicStateRef),
+    ])
+    const poll = session.data()?.poll as PollRecord | undefined
+    if (poll?.status !== "active" || poll.twitchPollId !== tally.pollId) {
+      return null
+    }
+    return tallyOverlay(
+      publicState.data(),
+      { choices: tally.choices, ended },
+      Date.now()
+    )
+  }
+
   return {
     save(write) {
       return db.runTransaction(async (tx) => {
+        // Progress events are frequent and idempotent, so they skip receipts.
+        if (write.kind === "poll_progress") {
+          const projection = await readTally(tx, write.tally, false)
+          if (!projection) return "ignored"
+          tx.set(publicStateRef, projection)
+          return "tallied"
+        }
+
         const receiptRef = db.doc(
           tenantDoc(
             tenantId,
@@ -32,6 +62,10 @@ export function createEventSubStore(
             )
           )
           const pollExists = (await tx.get(pollRef)).exists
+          // Show final counts now; the processor applies the winner later.
+          const projection = pollExists
+            ? null
+            : await readTally(tx, write.poll, true)
           tx.create(receiptRef, {
             ...write.receipt,
             pollId: write.poll.pollId,
@@ -39,6 +73,7 @@ export function createEventSubStore(
           })
           if (pollExists) return "duplicate-poll"
           tx.create(pollRef, write.poll)
+          if (projection) tx.set(publicStateRef, projection)
           return "created"
         }
 

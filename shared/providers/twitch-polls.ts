@@ -68,7 +68,10 @@ export function createTwitchPollProvider(
   config: TwitchPollProviderConfig,
   request: typeof fetch = fetch
 ): PollProvider {
-  async function call(method: "GET" | "POST", body?: Record<string, unknown>) {
+  async function call(
+    method: "GET" | "POST" | "PATCH",
+    body?: Record<string, unknown>
+  ) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       let accessToken: string
       try {
@@ -147,6 +150,19 @@ export function createTwitchPollProvider(
         throw new PollProviderError("twitch_poll_provider", false)
       }
       return polls as TwitchPoll[]
+    },
+    async end(pollId) {
+      const data = await call("PATCH", {
+        broadcaster_id: config.broadcasterId,
+        id: pollId,
+        status: "TERMINATED",
+      })
+      const poll =
+        data.length === 1 ? parsePoll(data[0], config.broadcasterId) : null
+      if (!poll || poll.id !== pollId) {
+        throw new PollProviderError("twitch_poll_provider", false)
+      }
+      return poll
     },
   }
 }

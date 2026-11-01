@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import type { OverlayProjection } from "@/shared/overlay"
+import { leadingIndexes } from "@/shared/polls"
 import type { RealtimeIrlLocation } from "@/lib/realtimeirl/client"
 
 function fragmentKey() {
@@ -46,20 +47,46 @@ function Card({
     )
   }
   if (overlay.state === "voting") {
+    const leaders = leadingIndexes(overlay.choices.map((c) => c.votes))
+    const tie = leaders.length > 1
+    const leaderTag = overlay.ended
+      ? tie
+        ? "TIE"
+        : "WINNER"
+      : tie
+        ? "TIED"
+        : "WINNING"
     return (
       <div className="show-card show-card--voting">
         <p className="show-kicker">CHAT DECIDES</p>
         <h1 className="show-title">{overlay.title}</h1>
         <ol className="show-options">
-          {overlay.choices.map((choice) => (
-            <li key={choice.position}>
+          {overlay.choices.map((choice, index) => (
+            <li
+              key={choice.position}
+              className={leaders.includes(index) ? "show-option--leader" : ""}
+            >
               <span>{choice.position}</span>
-              {choice.title}
+              <b className="show-option-title">{choice.title}</b>
+              {leaders.includes(index) && (
+                <em className="show-option-tag">{leaderTag}</em>
+              )}
+              <strong className="show-option-votes">{choice.votes}</strong>
             </li>
           ))}
         </ol>
         <div className="show-live">
-          <i /> VOTING LIVE
+          {overlay.ended ? (
+            tie ? (
+              "TIE! STREAMER PICKS"
+            ) : (
+              "VOTING CLOSED"
+            )
+          ) : (
+            <>
+              <i /> VOTING LIVE
+            </>
+          )}
         </div>
       </div>
     )

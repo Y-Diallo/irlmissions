@@ -12,7 +12,9 @@ export type OverlayProjection =
       state: "voting"
       updatedAt: number
       title: string
-      choices: Array<{ position: number; title: string }>
+      choices: Array<{ position: number; title: string; votes: number }>
+      ended?: true
+      tie?: true
     }
   | {
       state: "heading"
@@ -45,7 +47,9 @@ export function idleOverlay(updatedAt: number): OverlayProjection {
 }
 
 export function votingOverlay(poll: PollRecord): OverlayProjection {
-  if (poll.status !== "active") throw new OverlayError("poll_not_public")
+  if (poll.status !== "active" && poll.status !== "tie") {
+    throw new OverlayError("poll_not_public")
+  }
   return {
     state: "voting",
     updatedAt: poll.updatedAt,
@@ -53,7 +57,47 @@ export function votingOverlay(poll: PollRecord): OverlayProjection {
     choices: poll.choices.map((choice, index) => ({
       position: index + 1,
       title: choice.title,
+      votes: choice.votes ?? 0,
     })),
+    ...(poll.status === "tie" ? { ended: true, tie: true } : {}),
+  }
+}
+
+// Apply a Twitch progress/end tally to the live voting card. Returns null when
+// the card is no longer showing this poll's choices.
+export function tallyOverlay(
+  current: unknown,
+  tally: { choices: Array<{ title: string; votes: number }>; ended: boolean },
+  now: number
+): OverlayProjection | null {
+  let view: OverlayProjection
+  try {
+    view = toOverlayView(current)
+  } catch {
+    return null
+  }
+  if (
+    view.state !== "voting" ||
+    view.ended ||
+    view.choices.length !== tally.choices.length ||
+    view.choices.some(
+      (choice, index) =>
+        choice.title !== withoutDashes(tally.choices[index]!.title)
+    )
+  ) {
+    return null
+  }
+  return {
+    ...view,
+    updatedAt: now,
+    // Progress events can arrive out of order; vote totals never decrease.
+    choices: view.choices.map((choice, index) => ({
+      ...choice,
+      votes: tally.ended
+        ? tally.choices[index]!.votes
+        : Math.max(choice.votes, tally.choices[index]!.votes),
+    })),
+    ...(tally.ended ? { ended: true } : {}),
   }
 }
 
@@ -138,8 +182,18 @@ export function toOverlayView(value: unknown): OverlayProjection {
         if (choice.position !== index + 1) {
           throw new OverlayError("invalid_overlay_projection")
         }
-        return { position: index + 1, title: text(choice.title, 25) }
+        const votes = choice.votes ?? 0
+        if (!Number.isSafeInteger(votes) || (votes as number) < 0) {
+          throw new OverlayError("invalid_overlay_projection")
+        }
+        return {
+          position: index + 1,
+          title: text(choice.title, 25),
+          votes: votes as number,
+        }
       }),
+      ...(input.ended === true ? { ended: true as const } : {}),
+      ...(input.tie === true ? { tie: true as const } : {}),
     }
   }
   if (

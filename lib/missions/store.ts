@@ -2,7 +2,9 @@ import "server-only"
 import { FieldValue, type Firestore } from "firebase-admin/firestore"
 import { eventSubStorageId } from "@/shared/eventsub"
 import { missionOverlay } from "@/shared/overlay"
+import type { PollRecord } from "@/shared/polls"
 import {
+  createMissionFromPick,
   MissionError,
   toMissionOwnerView,
   transitionMission,
@@ -25,6 +27,76 @@ export function createMissionStore(db: Firestore, tenantId: string) {
     async read() {
       const mission = missionFrom((await sessionRef.get()).data())
       return mission ? toMissionOwnerView(mission) : null
+    },
+
+    pick(redemptionId: string, now: number) {
+      return db.runTransaction(async (tx) => {
+        const pitchRef = db.doc(
+          tenantDoc(tenantId, `pitches/${eventSubStorageId(redemptionId)}`)
+        )
+        const [session, pitch] = await Promise.all([
+          tx.get(sessionRef),
+          tx.get(pitchRef),
+        ])
+        if (["heading", "arrived"].includes(session.data()?.mission?.status)) {
+          throw new MissionError("mission_in_progress")
+        }
+        const poll = session.data()?.poll as PollRecord | undefined
+        if (
+          poll &&
+          ["creating", "create_unknown", "active"].includes(poll.status)
+        ) {
+          throw new MissionError("poll_in_progress")
+        }
+        if (!pitch.exists) throw new MissionError("pitch_not_found", 404)
+        // Picking during a tie overrides it: the other tied pitches unlock.
+        const tie = poll?.status === "tie" ? poll : null
+        const tiedSnapshots = []
+        for (const tiedId of tie?.tiedRedemptionIds ?? []) {
+          if (tiedId === redemptionId) continue
+          tiedSnapshots.push(
+            await tx.get(
+              db.doc(tenantDoc(tenantId, `pitches/${eventSubStorageId(tiedId)}`))
+            )
+          )
+        }
+        const mission = createMissionFromPick(
+          { ...pitch.data(), redemptionId },
+          now,
+          tie?.lockId
+        )
+
+        if (tie) {
+          const { tiedRedemptionIds: _tied, ...rest } = tie
+          tx.set(
+            sessionRef,
+            {
+              mission,
+              poll: { ...rest, status: "canceled", errorCode: "owner_picked", updatedAt: now },
+            },
+            { merge: true }
+          )
+          for (const snapshot of tiedSnapshots) {
+            if (snapshot.data()?.lockedBy === tie.lockId) {
+              tx.update(snapshot.ref, {
+                lockedBy: FieldValue.delete(),
+                updatedAt: now,
+              })
+            }
+          }
+        } else {
+          tx.set(sessionRef, { mission }, { merge: true })
+        }
+        tx.set(publicStateRef, missionOverlay(mission))
+        tx.update(pitchRef, {
+          lockedBy: mission.lockId,
+          reviewStatus: "active_mission",
+          missionId: mission.missionId,
+          pickedAt: now,
+          updatedAt: now,
+        })
+        return toMissionOwnerView(mission)
+      })
     },
 
     act(action: MissionAction, now: number) {
