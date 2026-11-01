@@ -158,24 +158,23 @@ function Card({
         </div>
       )}
       <div className="show-card-content">
-        <div className="show-stage-row">
-          <p className="show-kicker">
-            {heading
-              ? "NEXT MISSION"
-              : overlay.state === "arrived"
-                ? "MISSION ACTIVE"
-                : overlay.state === "completed"
-                  ? "MISSION COMPLETE"
-                  : "MISSION FAILED"}
-          </p>
-          <span className={`show-state-pill show-state-pill--${overlay.state}`}>
-            {heading
-              ? "EN ROUTE"
-              : overlay.state === "arrived"
-                ? "LIVE"
-                : overlay.state.toUpperCase()}
-          </span>
-        </div>
+        {terminal ? (
+          <div className={`show-result show-result--${overlay.state}`}>
+            <span>MISSION</span>
+            <strong>
+              {overlay.state === "completed" ? "COMPLETE" : "FAILED"}
+            </strong>
+          </div>
+        ) : (
+          <div className="show-stage-row">
+            <p className="show-kicker">
+              {heading ? "NEXT MISSION" : "MISSION ACTIVE"}
+            </p>
+            <span className={`show-state-pill show-state-pill--${overlay.state}`}>
+              {heading ? "EN ROUTE" : "LIVE"}
+            </span>
+          </div>
+        )}
         <p className="show-label">CURRENT OBJECTIVE</p>
         <h1 className="show-objective">{overlay.objective}</h1>
         {"placeName" in overlay && overlay.placeName && (
@@ -197,15 +196,18 @@ function Card({
             </div>
           </div>
         )}
-        {terminal && (
-          <p className="show-status show-status--terminal">
-            {overlay.state === "completed"
-              ? "Challenge cleared!"
-              : "consequence" in overlay && overlay.consequence
-                ? `Consequence: ${overlay.consequence}`
-                : "Mission failed, geeg"}
-          </p>
+        {overlay.state === "completed" && (
+          <p className="show-result-message">Challenge cleared!</p>
         )}
+        {overlay.state === "failed" &&
+          ("consequence" in overlay && overlay.consequence ? (
+            <div className="show-consequence">
+              <span>CONSEQUENCE</span>
+              <strong>{overlay.consequence}</strong>
+            </div>
+          ) : (
+            <p className="show-result-message">Challenge failed.</p>
+          ))}
       </div>
     </div>
   )
