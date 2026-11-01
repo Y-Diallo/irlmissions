@@ -259,3 +259,22 @@ export function evaluateRealtimeIrlArrival(input: {
     },
   }
 }
+
+export function evaluateRealtimeIrlHeartbeat(input: {
+  location: Coordinates
+  now: number
+  settings: ArrivalSettings
+  mission: MissionRecord | null
+  confirmation: ArrivalConfirmation | null
+}) {
+  // An authenticated heartbeat confirms that the RealtimeIRL pull session is
+  // online. It can keep an unchanged coordinate usable without pretending the
+  // provider emitted a new GPS observation.
+  return evaluateRealtimeIrlArrival({
+    sample: { ...input.location, observedAt: input.now },
+    now: input.now,
+    settings: input.settings,
+    mission: input.mission,
+    confirmation: input.confirmation,
+  })
+}

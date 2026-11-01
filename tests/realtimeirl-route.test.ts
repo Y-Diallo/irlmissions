@@ -11,13 +11,17 @@ const mocks = vi.hoisted(() => ({
   })),
   requireOverlayTenant: vi.fn(),
   record: vi.fn(),
+  heartbeat: vi.fn(),
 }))
 
 vi.mock("@/lib/firebase/admin", () => ({
   getServerFirebase: mocks.getServerFirebase,
 }))
 vi.mock("@/lib/realtimeirl/store", () => ({
-  createRealtimeIrlStore: () => ({ record: mocks.record }),
+  createRealtimeIrlStore: () => ({
+    record: mocks.record,
+    heartbeat: mocks.heartbeat,
+  }),
 }))
 vi.mock("@/lib/overlay/access-server", () => ({
   requireOverlayTenant: mocks.requireOverlayTenant,
@@ -25,6 +29,7 @@ vi.mock("@/lib/overlay/access-server", () => ({
 
 import { GET as getConfig } from "@/app/api/realtimeirl/config/route"
 import { POST as postLocation } from "@/app/api/realtimeirl/location/route"
+import { POST as postHeartbeat } from "@/app/api/realtimeirl/heartbeat/route"
 
 const key = "overlay_test_key_1234567890_abcdef"
 const authorization = { authorization: `Bearer ${key}` }
@@ -66,8 +71,18 @@ describe("RealtimeIRL scoped routes", () => {
       })
     )
     expect(response.status).toBe(401)
+    expect(
+      (
+        await postHeartbeat(
+          new Request("http://localhost/api/realtimeirl/heartbeat", {
+            method: "POST",
+          })
+        )
+      ).status
+    ).toBe(401)
     expect(mocks.getServerFirebase).not.toHaveBeenCalled()
     expect(mocks.record).not.toHaveBeenCalled()
+    expect(mocks.heartbeat).not.toHaveBeenCalled()
   })
 
   it("validates location bodies before initializing Firebase", async () => {
@@ -105,6 +120,26 @@ describe("RealtimeIRL scoped routes", () => {
     await expect(response.json()).resolves.toEqual({
       status: "confirming",
       fresh: true,
+      privacyBlocked: false,
+    })
+  })
+
+  it("records a scoped feed heartbeat without accepting coordinates", async () => {
+    mocks.requireOverlayTenant.mockResolvedValue("42")
+    mocks.heartbeat.mockResolvedValue({
+      status: "no_active_mission",
+      privacyBlocked: false,
+    })
+    const response = await postHeartbeat(
+      new Request("http://localhost/api/realtimeirl/heartbeat", {
+        method: "POST",
+        headers: authorization,
+      })
+    )
+    expect(response.status).toBe(200)
+    expect(mocks.heartbeat).toHaveBeenCalledWith(expect.any(Number))
+    await expect(response.json()).resolves.toEqual({
+      status: "no_active_mission",
       privacyBlocked: false,
     })
   })

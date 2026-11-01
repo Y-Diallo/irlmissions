@@ -158,6 +158,12 @@ export function createPitchContextProvider(db: Firestore, tenantId: string) {
           longitude: number(location.longitude, "location.longitude"),
           observedAt: number(location.observedAt, "location.observedAt"),
         },
+        locationConfirmedAt: number(
+          location.feedHeartbeatAt ??
+            location.receivedAt ??
+            location.observedAt,
+          "location.confirmedAt"
+        ),
         searchRadiusMeters: number(
           settings.searchRadiusMeters,
           "searchRadiusMeters"

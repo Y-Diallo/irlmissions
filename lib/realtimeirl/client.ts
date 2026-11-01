@@ -8,11 +8,14 @@ export type RealtimeIrlLocation = {
 
 export async function subscribeRealtimeIrl(
   pullKey: string,
-  onLocation: (location: RealtimeIrlLocation) => void
+  onLocation: (location: RealtimeIrlLocation) => void,
+  onHeartbeat?: () => void
 ) {
   const RealtimeIRL = await import("@rtirl/api")
+  const source = RealtimeIRL.forPullKey(pullKey, { forceWebSockets: true })
   let lastReportedAt = -1
-  return RealtimeIRL.forPullKey(pullKey, { forceWebSockets: true }).addListener(
+  let online = false
+  const stopLocations = source.addListener(
     (data: unknown) => {
       if (!data || typeof data !== "object" || Array.isArray(data)) return
       const root = data as Record<string, unknown>
@@ -44,4 +47,17 @@ export async function subscribeRealtimeIrl(
       })
     }
   )
+  const stopSession = source.addSessionIdListener((sessionId: unknown) => {
+    online = typeof sessionId === "string" && sessionId.length > 0
+    if (online) onHeartbeat?.()
+  })
+  const heartbeatTimer = setInterval(() => {
+    if (online) onHeartbeat?.()
+  }, 15_000)
+
+  return () => {
+    clearInterval(heartbeatTimer)
+    stopLocations()
+    stopSession()
+  }
 }

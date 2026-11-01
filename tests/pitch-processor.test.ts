@@ -188,6 +188,27 @@ describe("pitch processor", () => {
     expect(state.completed).toBeNull()
   })
 
+  it("accepts an unchanged coordinate while its feed heartbeat is fresh", async () => {
+    const state = fixture()
+    state.context.origin.observedAt = now - 10 * 60_000
+    state.context.locationConfirmedAt = now - 15_000
+    await expect(processPitch("redemption-1", state.deps)).resolves.toEqual({
+      kind: "ready_for_review",
+      flagged: false,
+    })
+  })
+
+  it("stops using a coordinate after its feed heartbeat expires", async () => {
+    const state = fixture()
+    state.context.locationConfirmedAt = now - 45_001
+    await expect(processPitch("redemption-1", state.deps)).resolves.toEqual({
+      kind: "retry",
+      code: "stale_location",
+      automaticRetryAt: now + 15_000,
+    })
+    expect(state.deps.automod.check).not.toHaveBeenCalled()
+  })
+
   it("does nothing when another worker already owns the pitch", async () => {
     const state = fixture()
     vi.mocked(state.store.claim).mockResolvedValueOnce(null)

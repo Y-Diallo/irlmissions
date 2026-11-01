@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { transitionMission, type MissionRecord } from "@/shared/missions"
 import {
   evaluateRealtimeIrlArrival,
+  evaluateRealtimeIrlHeartbeat,
   parseArrivalSettings,
   parseRealtimeIrlSample,
   type ArrivalConfirmation,
@@ -194,6 +195,22 @@ describe("RealtimeIRL arrival policy", () => {
         timerEndsAt: now + 580_000,
         destinationRevealedAt: now,
       },
+    })
+  })
+
+  it("uses an online-feed heartbeat to confirm a stationary arrival", () => {
+    const first = evaluate({ observedAt: now - 10_000 })
+    expect(
+      evaluateRealtimeIrlHeartbeat({
+        location: destination,
+        now,
+        settings,
+        mission: mission(),
+        confirmation: first.nextConfirmation,
+      })
+    ).toMatchObject({
+      status: "arrived",
+      mission: { status: "arrived", arrivedAt: now },
     })
   })
 })

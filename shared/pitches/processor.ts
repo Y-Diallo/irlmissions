@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto"
 
 const CLAIM_MS = 2 * 60 * 1000
 const DEFAULT_LOCATION_MAX_AGE_MS = 2 * 60 * 1000
+const FEED_HEARTBEAT_MAX_AGE_MS = 45 * 1000
 const MAX_AUTOMATIC_ATTEMPTS = 5
 
 export type Coordinates = { latitude: number; longitude: number }
@@ -15,6 +16,7 @@ export type ProcessingPitch = {
 
 export type ProcessingContext = {
   origin: Coordinates & { observedAt: number }
+  locationConfirmedAt?: number
   searchRadiusMeters: number
   baseZone: Coordinates & { radiusMeters: number }
   llmEnabled: boolean
@@ -169,11 +171,15 @@ export function distanceMeters(a: Coordinates, b: Coordinates) {
 function validateContext(context: ProcessingContext, now: number) {
   validCoordinates(context.origin, "invalid_origin")
   validCoordinates(context.baseZone, "invalid_base_zone")
-  const maxAge = context.locationMaxAgeMs ?? DEFAULT_LOCATION_MAX_AGE_MS
+  const maxAge =
+    context.locationConfirmedAt === undefined
+      ? (context.locationMaxAgeMs ?? DEFAULT_LOCATION_MAX_AGE_MS)
+      : FEED_HEARTBEAT_MAX_AGE_MS
+  const confirmedAt = context.locationConfirmedAt ?? context.origin.observedAt
   if (
-    !Number.isFinite(context.origin.observedAt) ||
-    context.origin.observedAt > now + 30_000 ||
-    now - context.origin.observedAt > maxAge
+    !Number.isFinite(confirmedAt) ||
+    confirmedAt > now + 30_000 ||
+    now - confirmedAt > maxAge
   ) {
     throw new ProcessingError("stale_location")
   }

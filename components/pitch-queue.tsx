@@ -51,7 +51,8 @@ const processingErrors: Record<string, string> = {
   openai_unavailable: "OpenAI could not clean up this pitch.",
   places_unavailable: "Google Places could not find destinations.",
   routes_unavailable: "Google Routes could not calculate the walk.",
-  stale_location: "The latest location is too old. Check RealtimeIRL.",
+  stale_location:
+    "RealtimeIRL is offline or has not supplied a current location.",
   provider_unavailable: "An external provider was unavailable.",
 }
 

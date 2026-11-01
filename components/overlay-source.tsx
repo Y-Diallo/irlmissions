@@ -289,6 +289,24 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
       }
     }
 
+    const sendHeartbeat = async () => {
+      try {
+        const response = await fetch("/api/realtimeirl/heartbeat", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "X-Overlay-Id": overlayId ?? "",
+          },
+        })
+        if (!response.ok && response.status !== 409) {
+          throw new Error("Location heartbeat failed")
+        }
+        if (!stopped) setLocationError("")
+      } catch {
+        if (!stopped) setLocationError("Location disconnected")
+      }
+    }
+
     const start = async () => {
       try {
         const response = await fetch("/api/realtimeirl/config", {
@@ -304,9 +322,13 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
         }
         const { subscribeRealtimeIrl } =
           await import("@/lib/realtimeirl/client")
-        const stop = await subscribeRealtimeIrl(body.pullKey, (location) => {
-          void sendLocation(location)
-        })
+        const stop = await subscribeRealtimeIrl(
+          body.pullKey,
+          (location) => {
+            void sendLocation(location)
+          },
+          () => void sendHeartbeat()
+        )
         if (stopped) stop()
         else {
           unsubscribe = stop

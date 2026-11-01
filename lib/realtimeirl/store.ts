@@ -4,7 +4,9 @@ import type { Firestore } from "firebase-admin/firestore"
 import { missionOverlay } from "@/shared/overlay"
 import {
   evaluateRealtimeIrlArrival,
+  evaluateRealtimeIrlHeartbeat,
   parseArrivalSettings,
+  RealtimeIrlError,
   type ArrivalConfirmation,
   type RealtimeIrlSample,
 } from "@/shared/realtimeirl"
@@ -32,6 +34,16 @@ function confirmationFrom(data: FirebaseFirestore.DocumentData | undefined) {
 
 function observedAtFrom(data: FirebaseFirestore.DocumentData | undefined) {
   return typeof data?.observedAt === "number" ? data.observedAt : undefined
+}
+
+function coordinatesFrom(data: FirebaseFirestore.DocumentData | undefined) {
+  if (
+    typeof data?.latitude !== "number" ||
+    typeof data?.longitude !== "number"
+  ) {
+    throw new RealtimeIrlError("location_unavailable", 409)
+  }
+  return { latitude: data.latitude, longitude: data.longitude }
 }
 
 export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
@@ -76,6 +88,7 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
           longitude: sample.longitude,
           observedAt: sample.observedAt,
           receivedAt: now,
+          feedHeartbeatAt: now,
           source: "realtimeirl",
           privacyBlocked: decision.privacyBlocked,
         })
@@ -86,6 +99,50 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
           tx.delete(confirmationRef)
         }
 
+        if (decision.mission) {
+          tx.set(sessionRef, { mission: decision.mission }, { merge: true })
+          tx.set(publicStateRef, missionOverlay(decision.mission))
+        }
+        return decision
+      })
+    },
+    heartbeat(now: number) {
+      return db.runTransaction(async (tx) => {
+        const [
+          settingsSnapshot,
+          sessionSnapshot,
+          confirmationSnapshot,
+          locationSnapshot,
+        ] = await tx.getAll(
+          settingsRef,
+          sessionRef,
+          confirmationRef,
+          locationRef
+        )
+        if (!settingsSnapshot.exists) {
+          throw new Error("Arrival settings are missing")
+        }
+        const decision = evaluateRealtimeIrlHeartbeat({
+          location: coordinatesFrom(locationSnapshot.data()),
+          now,
+          settings: parseArrivalSettings(settingsSnapshot.data()),
+          mission: missionFrom(sessionSnapshot.data()),
+          confirmation: confirmationFrom(confirmationSnapshot.data()),
+        })
+
+        tx.set(
+          locationRef,
+          {
+            feedHeartbeatAt: now,
+            privacyBlocked: decision.privacyBlocked,
+          },
+          { merge: true }
+        )
+        if (decision.nextConfirmation) {
+          tx.set(confirmationRef, decision.nextConfirmation)
+        } else {
+          tx.delete(confirmationRef)
+        }
         if (decision.mission) {
           tx.set(sessionRef, { mission: decision.mission }, { merge: true })
           tx.set(publicStateRef, missionOverlay(decision.mission))
