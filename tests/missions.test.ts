@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  carryActiveConsequence,
   createMissionFromWinner,
   missionNavigation,
   parseMissionAction,
@@ -142,6 +143,60 @@ describe("mission state", () => {
     expect(() => transitionMission(complete, "fail", now + 3000)).toThrow(
       "mission_finished"
     )
+  })
+
+  it("carries a failed consequence through exactly the next mission", () => {
+    const first = {
+      ...mission(),
+      failConsequence: "No swearing for 10 minutes",
+    }
+    const failed = transitionMission(
+      transitionMission(first, "arrive", now + 1000),
+      "fail",
+      now + 2000
+    )
+    expect(failed.activeConsequence).toEqual({
+      text: "No swearing for 10 minutes",
+      clearRule: "through_next_mission",
+      sourceMissionId: first.missionId,
+    })
+
+    const next = carryActiveConsequence(
+      { ...mission(), missionId: "next-mission", lockId: "next-lock" },
+      failed
+    )
+    expect(missionOverlay(next)).toMatchObject({
+      consequence: "No swearing for 10 minutes",
+      consequenceClearRule: "through_next_mission",
+    })
+    const completed = transitionMission(
+      transitionMission(next, "arrive", now + 3000),
+      "complete",
+      now + 4000
+    )
+    expect(completed).not.toHaveProperty("activeConsequence")
+    expect(missionOverlay(completed)).not.toHaveProperty("consequence")
+  })
+
+  it("replaces an active consequence when the next mission also fails", () => {
+    const next = {
+      ...mission(),
+      failConsequence: "Wear a funny hat",
+      activeConsequence: {
+        text: "No swearing",
+        clearRule: "through_next_mission" as const,
+        sourceMissionId: "previous-mission",
+      },
+    }
+    const failed = transitionMission(
+      transitionMission(next, "arrive", now + 1000),
+      "fail",
+      now + 2000
+    )
+    expect(failed.activeConsequence).toMatchObject({
+      text: "Wear a funny hat",
+      sourceMissionId: next.missionId,
+    })
   })
 
   it("cancels only before arrival", () => {

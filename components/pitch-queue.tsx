@@ -492,7 +492,9 @@ function PitchCard({
                 onChange={(event) => setFailConsequence(event.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                You can replace the generated consequence or leave it blank.
+                You can replace the generated consequence or leave it blank. If
+                approved, it clears automatically when the following mission is
+                completed or failed.
               </p>
             </div>
           </div>

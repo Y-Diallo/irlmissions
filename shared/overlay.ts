@@ -1,4 +1,4 @@
-import type { MissionRecord } from "@/shared/missions"
+import type { ConsequenceClearRule, MissionRecord } from "@/shared/missions"
 import { withoutDashes, type PollRecord } from "@/shared/polls"
 
 type RevealedPlace = {
@@ -6,6 +6,11 @@ type RevealedPlace = {
   hasPlacePhoto?: true
   /** Stable across timer extensions and other updates to the same mission. */
   photoVersion?: number
+}
+
+type ConsequenceView = {
+  consequence?: string
+  consequenceClearRule?: ConsequenceClearRule
 }
 
 export type OverlayProjection =
@@ -18,26 +23,26 @@ export type OverlayProjection =
       ended?: true
       tie?: true
     }
-  | {
+  | ({
       state: "heading"
       updatedAt: number
       objective: string
       /** Display name of the viewer who pitched it; "Chat" when unknown. */
       chosenBy: string
-    }
+    } & ConsequenceView)
   | ({
       state: "arrived"
       updatedAt: number
       objective: string
       timerEndsAt: number
-    } & RevealedPlace)
+    } & RevealedPlace &
+      ConsequenceView)
   | ({
       state: "completed" | "failed"
       updatedAt: number
       objective: string
-      /** Only on a failed mission whose viewer named a penalty. */
-      consequence?: string
-    } & RevealedPlace)
+    } & RevealedPlace &
+      ConsequenceView)
 
 export class OverlayError extends Error {
   constructor(
@@ -116,6 +121,15 @@ function revealedPlace(mission: MissionRecord): RevealedPlace {
   }
 }
 
+function activeConsequence(mission: MissionRecord): ConsequenceView {
+  return mission.activeConsequence
+    ? {
+        consequence: mission.activeConsequence.text,
+        consequenceClearRule: mission.activeConsequence.clearRule,
+      }
+    : {}
+}
+
 export function missionOverlay(mission: MissionRecord): OverlayProjection {
   if (mission.status === "canceled") {
     return idleOverlay(mission.updatedAt)
@@ -126,6 +140,7 @@ export function missionOverlay(mission: MissionRecord): OverlayProjection {
       updatedAt: mission.updatedAt,
       objective: mission.publicLabel,
       chosenBy: mission.viewerName ?? "Chat",
+      ...activeConsequence(mission),
     }
   }
   if (mission.status === "arrived") {
@@ -135,6 +150,7 @@ export function missionOverlay(mission: MissionRecord): OverlayProjection {
       updatedAt: mission.updatedAt,
       objective: mission.publicLabel,
       timerEndsAt: mission.timerEndsAt,
+      ...activeConsequence(mission),
       ...revealedPlace(mission),
     }
   }
@@ -142,9 +158,7 @@ export function missionOverlay(mission: MissionRecord): OverlayProjection {
     state: mission.status,
     updatedAt: mission.updatedAt,
     objective: mission.publicLabel,
-    ...(mission.status === "failed" && mission.failConsequence
-      ? { consequence: mission.failConsequence }
-      : {}),
+    ...activeConsequence(mission),
     ...revealedPlace(mission),
   }
 }
@@ -219,6 +233,13 @@ export function toOverlayView(value: unknown): OverlayProjection {
     throw new OverlayError("invalid_overlay_projection")
   }
   const objective = text(input.objective, 25)
+  const consequence: ConsequenceView =
+    input.consequence === undefined
+      ? {}
+      : {
+          consequence: text(input.consequence, 80),
+          consequenceClearRule: "through_next_mission",
+        }
   const place: RevealedPlace =
     input.placeName === undefined
       ? {}
@@ -242,6 +263,7 @@ export function toOverlayView(value: unknown): OverlayProjection {
       state: "arrived",
       updatedAt,
       objective,
+      ...consequence,
       ...place,
       timerEndsAt: timestamp(input.timerEndsAt),
     }
@@ -253,15 +275,14 @@ export function toOverlayView(value: unknown): OverlayProjection {
       objective,
       chosenBy:
         input.chosenBy === undefined ? "Chat" : text(input.chosenBy, 25),
+      ...consequence,
     }
   }
   return {
     state: input.state,
     updatedAt,
     objective,
-    ...(input.state === "failed" && input.consequence !== undefined
-      ? { consequence: text(input.consequence, 80) }
-      : {}),
+    ...consequence,
     ...place,
   }
 }

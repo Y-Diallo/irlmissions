@@ -102,6 +102,15 @@ export function MissionCard({
         </div>
       </CardHeader>
       <CardContent className="gap-5">
+        {mission.activeConsequence && (
+          <Alert>
+            <AlertTitle>Active consequence</AlertTitle>
+            <AlertDescription>
+              {mission.activeConsequence.text} — clears on the next Complete or
+              Fail action.
+            </AlertDescription>
+          </Alert>
+        )}
         {!destination || !walkingRoute || !navigation ? (
           <div className="rounded-lg bg-muted p-4">
             <p className="text-lg font-semibold">Anywhere</p>

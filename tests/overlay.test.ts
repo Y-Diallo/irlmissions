@@ -131,11 +131,7 @@ describe("public overlay projection", () => {
       )
     ).toBeNull()
     expect(
-      tallyOverlay(
-        missionOverlay(mission),
-        { choices: [], ended: false },
-        now
-      )
+      tallyOverlay(missionOverlay(mission), { choices: [], ended: false }, now)
     ).toBeNull()
   })
 
@@ -147,7 +143,11 @@ describe("public overlay projection", () => {
         choices: poll.choices.map((choice) => ({ ...choice, votes: 2 })),
         tiedRedemptionIds: ["secret-redemption-1", "secret-redemption-2"],
       })
-    ).toMatchObject({ ended: true, tie: true, choices: [{ votes: 2 }, { votes: 2 }] })
+    ).toMatchObject({
+      ended: true,
+      tie: true,
+      choices: [{ votes: 2 }, { votes: 2 }],
+    })
   })
 
   it("hides every destination field while heading there", () => {
@@ -192,22 +192,38 @@ describe("public overlay projection", () => {
     })
   })
 
-  it("shows the viewer's fail consequence only on a failed mission", () => {
-    const withPenalty = { ...mission, failConsequence: "Eat a lemon" }
+  it("shows an active consequence throughout its clearing mission", () => {
+    const withPenalty: MissionRecord = {
+      ...mission,
+      activeConsequence: {
+        text: "Eat a lemon",
+        clearRule: "through_next_mission",
+        sourceMissionId: "previous-mission",
+      },
+    }
+    expect(missionOverlay(withPenalty)).toMatchObject({
+      consequence: "Eat a lemon",
+      consequenceClearRule: "through_next_mission",
+    })
     expect(
-      missionOverlay({ ...withPenalty, status: "failed" })
-    ).toMatchObject({ consequence: "Eat a lemon" })
-    expect(
-      missionOverlay({ ...withPenalty, status: "completed" })
-    ).not.toHaveProperty("consequence")
-    expect(
-      toOverlayView({
-        state: "failed",
-        updatedAt: now,
-        objective: "Go",
-        consequence: "Eat a lemon",
+      missionOverlay({
+        ...withPenalty,
+        status: "arrived",
+        timerEndsAt: now + 60_000,
       })
     ).toMatchObject({ consequence: "Eat a lemon" })
+    expect(
+      toOverlayView({
+        state: "heading",
+        updatedAt: now,
+        objective: "Go",
+        chosenBy: "Chat",
+        consequence: "Eat a lemon",
+      })
+    ).toMatchObject({
+      consequence: "Eat a lemon",
+      consequenceClearRule: "through_next_mission",
+    })
   })
 
   it("publishes only photo availability after reveal", () => {

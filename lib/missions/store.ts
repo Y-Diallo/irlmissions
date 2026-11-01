@@ -4,6 +4,7 @@ import { eventSubStorageId } from "@/shared/eventsub"
 import { idleOverlay, missionOverlay } from "@/shared/overlay"
 import type { PollRecord } from "@/shared/polls"
 import {
+  carryActiveConsequence,
   createMissionFromPick,
   MissionError,
   toMissionOwnerView,
@@ -63,16 +64,19 @@ export function createMissionStore(db: Firestore, tenantId: string) {
             )
           )
         }
-        const mission = createMissionFromPick(
-          {
-            ...pitch.data(),
-            redemptionId,
-            ...(settings.data()?.noTravelMode === true
-              ? { noTravel: true }
-              : {}),
-          },
-          now,
-          tie?.lockId
+        const mission = carryActiveConsequence(
+          createMissionFromPick(
+            {
+              ...pitch.data(),
+              redemptionId,
+              ...(settings.data()?.noTravelMode === true
+                ? { noTravel: true }
+                : {}),
+            },
+            now,
+            tie?.lockId
+          ),
+          missionFrom(session.data())
         )
 
         if (tie) {

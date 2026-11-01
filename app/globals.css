@@ -566,6 +566,14 @@ body:has(.overlay-canvas),
   text-wrap: balance;
 }
 
+.show-consequence small {
+  border-top: 2px solid var(--show-ink);
+  padding-top: 0.35rem;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
 .show-photo-credit {
   position: absolute;
   right: 0.5rem;

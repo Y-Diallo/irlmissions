@@ -7,6 +7,7 @@ import {
 } from "firebase-admin/firestore"
 import { eventSubStorageId, type PendingPollEnd } from "@/shared/eventsub"
 import {
+  carryActiveConsequence,
   createMissionFromWinner,
   MissionError,
   type MissionRecord,
@@ -134,7 +135,8 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
             resolution,
             pitchSnapshots,
             noTravelMode,
-            now
+            now,
+            sessionSnapshot.data()?.mission as MissionRecord | undefined
           )
         } catch (error) {
           if (!(error instanceof MissionError)) throw error
@@ -207,7 +209,8 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
           resolution,
           pitchSnapshots,
           settings.data()?.noTravelMode === true,
-          now
+          now,
+          session.data()?.mission as MissionRecord | undefined
         )
         writeResolution(
           tx,
@@ -243,7 +246,8 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
     resolution: PollResolution,
     pitchSnapshots: DocumentSnapshot[],
     noTravelMode: boolean,
-    now: number
+    now: number,
+    previousMission?: MissionRecord
   ) {
     if (!resolution.winnerRedemptionId) return null
     const winner = pitchSnapshots.find(
@@ -252,10 +256,13 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
     )
     if (!winner?.exists) throw new MissionError("winner_not_found", 500)
     const pitch = winner.data()!
-    return createMissionFromWinner(
-      resolution.poll,
-      noTravelMode ? { ...pitch, noTravel: true } : pitch,
-      now
+    return carryActiveConsequence(
+      createMissionFromWinner(
+        resolution.poll,
+        noTravelMode ? { ...pitch, noTravel: true } : pitch,
+        now
+      ),
+      previousMission ?? null
     )
   }
 

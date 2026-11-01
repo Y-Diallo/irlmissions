@@ -4,6 +4,14 @@ import type { PollRecord } from "@/shared/polls"
 export type MissionStatus =
   "heading" | "arrived" | "completed" | "failed" | "canceled"
 
+export type ConsequenceClearRule = "through_next_mission"
+
+export type ActiveConsequence = {
+  text: string
+  clearRule: ConsequenceClearRule
+  sourceMissionId: string
+}
+
 export type MissionRecord = {
   missionId: string
   lockId: string
@@ -12,8 +20,10 @@ export type MissionRecord = {
   redemptionId: string
   /** Twitch display name of the viewer who pitched it, shown on the overlay. */
   viewerName?: string
-  /** Viewer's stated penalty, shown on the overlay if the mission fails. */
+  /** Viewer's stated penalty, activated on the overlay if the mission fails. */
   failConsequence?: string
+  /** A failed mission's consequence, carried until the following outcome. */
+  activeConsequence?: ActiveConsequence
   status: MissionStatus
   publicLabel: string
   durationMinutes: number
@@ -214,6 +224,30 @@ function missionFromPitch(
   }
 }
 
+// Carry a consequence onto the next mission. The fallback supports sessions
+// that failed before active consequences were introduced.
+export function carryActiveConsequence(
+  next: MissionRecord,
+  previous: MissionRecord | null
+): MissionRecord {
+  if (!previous) return next
+  const active = previous.activeConsequence
+  if (active?.text.trim()) {
+    return { ...next, activeConsequence: active }
+  }
+  if (previous.status === "failed" && previous.failConsequence?.trim()) {
+    return {
+      ...next,
+      activeConsequence: {
+        text: previous.failConsequence.trim().slice(0, 80),
+        clearRule: "through_next_mission",
+        sourceMissionId: previous.missionId,
+      },
+    }
+  }
+  return next
+}
+
 export function parseMissionAction(value: unknown): MissionAction {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new MissionError("invalid_mission_action", 400)
@@ -291,8 +325,19 @@ export function transitionMission(
   if (record.status !== "arrived") {
     throw new MissionError("mission_not_arrived")
   }
+  const withoutConsequence = { ...record }
+  delete withoutConsequence.activeConsequence
   return {
-    ...record,
+    ...withoutConsequence,
+    ...(target === "failed" && record.failConsequence
+      ? {
+          activeConsequence: {
+            text: record.failConsequence,
+            clearRule: "through_next_mission" as const,
+            sourceMissionId: record.missionId,
+          },
+        }
+      : {}),
     status: target,
     outcomeAt: now,
     updatedAt: now,
