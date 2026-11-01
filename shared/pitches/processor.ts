@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto"
 
 const CLAIM_MS = 2 * 60 * 1000
 const DEFAULT_LOCATION_MAX_AGE_MS = 2 * 60 * 1000
-const FEED_HEARTBEAT_MAX_AGE_MS = 45 * 1000
+const FEED_HEARTBEAT_MAX_AGE_MS = 2 * 60 * 1000
 const MAX_AUTOMATIC_ATTEMPTS = 5
 
 export type Coordinates = { latitude: number; longitude: number }
@@ -300,7 +300,23 @@ async function providerStep<T>(code: string, operation: () => Promise<T>) {
   } catch (error) {
     // Keep provider response bodies and credentials out of Firestore/UI while
     // preserving enough information to diagnose the integration that failed.
-    console.error(`Pitch processing step failed: ${code}`, error)
+    const exception =
+      error instanceof Error
+        ? {
+            errorName: error.name,
+            errorMessage: error.message.slice(0, 1_000),
+            ...(error.stack ? { stack: error.stack.slice(0, 4_000) } : {}),
+          }
+        : { errorName: "UnknownError", errorMessage: "Unknown provider error" }
+    console.error(
+      JSON.stringify({
+        severity: "ERROR",
+        event: "pitch_processing_step_failed",
+        message: `Pitch processing step failed: ${code}`,
+        step: code,
+        ...exception,
+      })
+    )
     throw new ProcessingError(code)
   }
 }

@@ -179,6 +179,7 @@ describe("pitch processor", () => {
   })
 
   it("turns provider outages into bounded retry state", async () => {
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {})
     const state = fixture("[places-error] cafe")
     await expect(processPitch("redemption-1", state.deps)).resolves.toEqual({
       kind: "retry",
@@ -186,6 +187,12 @@ describe("pitch processor", () => {
       automaticRetryAt: now + 15_000,
     })
     expect(state.completed).toBeNull()
+    expect(JSON.parse(String(errorLog.mock.calls[0]?.[0]))).toMatchObject({
+      severity: "ERROR",
+      event: "pitch_processing_step_failed",
+      step: "places_unavailable",
+      errorName: "Error",
+    })
   })
 
   it("accepts an unchanged coordinate while its feed heartbeat is fresh", async () => {
@@ -200,7 +207,7 @@ describe("pitch processor", () => {
 
   it("stops using a coordinate after its feed heartbeat expires", async () => {
     const state = fixture()
-    state.context.locationConfirmedAt = now - 45_001
+    state.context.locationConfirmedAt = now - 120_001
     await expect(processPitch("redemption-1", state.deps)).resolves.toEqual({
       kind: "retry",
       code: "stale_location",
