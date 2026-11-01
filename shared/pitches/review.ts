@@ -61,6 +61,8 @@ export type ReviewRecord = {
   noTravel?: boolean
   redemptionStatus?: "unfulfilled" | "fulfilled" | "canceled"
   redemptionResolution?: RedemptionResolution
+  /** Producer vetoed the active mission without activating its consequence. */
+  missionOutcome?: "denied"
 }
 
 export type PitchReviewItem = {
@@ -100,6 +102,7 @@ export type PitchReviewItem = {
   /** Rejected, but its refund hasn't started, so it can still be edited. */
   revivable: boolean
   redemptionResolution: RedemptionResolution | null
+  missionOutcome: "denied" | null
 }
 
 export type PitchHistoryItem = {
@@ -287,6 +290,7 @@ export function toPitchReviewItem(record: ReviewRecord): PitchReviewItem {
     pollLosses: record.pollLosses ?? 0,
     revivable: isRevivable(record),
     redemptionResolution: record.redemptionResolution ?? null,
+    missionOutcome: record.missionOutcome ?? null,
   }
 }
 

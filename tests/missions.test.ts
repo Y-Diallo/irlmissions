@@ -147,6 +147,30 @@ describe("mission state", () => {
     )
   })
 
+  it("denies an arrived mission without activating its consequence", () => {
+    const withConsequence: MissionRecord = {
+      ...mission(),
+      viewerName: "Pitcher",
+      failConsequence: "Use a pirate voice",
+      failConsequenceClearRule: "manual",
+    }
+    const denied = transitionMission(
+      transitionMission(withConsequence, "arrive", now + 1000),
+      "deny",
+      now + 2000
+    )
+    expect(denied).toMatchObject({
+      status: "failed",
+      outcome: "denied",
+      outcomeAt: now + 2000,
+    })
+    expect(denied.activeConsequences).toBeUndefined()
+    expect(missionOverlay(denied)).toMatchObject({
+      state: "failed",
+      denied: true,
+    })
+  })
+
   function failedWith(
     clearRule: "timed" | "at_next_stop" | "through_next_mission" | "manual",
     durationMinutes = 0
@@ -321,6 +345,7 @@ describe("mission state", () => {
     expect(parseMissionAction({ action: "arrive" })).toBe("arrive")
     expect(parseMissionAction({ action: "complete" })).toBe("complete")
     expect(parseMissionAction({ action: "fail" })).toBe("fail")
+    expect(parseMissionAction({ action: "deny" })).toBe("deny")
     expect(parseMissionAction({ action: "extend" })).toBe("extend")
     expect(parseMissionAction({ action: "cancel" })).toBe("cancel")
     expect(() => parseMissionAction({ action: "skip" })).toThrow(

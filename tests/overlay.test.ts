@@ -290,6 +290,21 @@ describe("public overlay projection", () => {
     expect(JSON.stringify(projection)).not.toContain("secret-place-id")
   })
 
+  it("preserves only the public denied marker for a producer veto", () => {
+    const projection = missionOverlay({
+      ...mission,
+      status: "failed",
+      outcome: "denied",
+      outcomeAt: now + 1000,
+      updatedAt: now + 1000,
+    })
+    expect(projection).toMatchObject({ state: "failed", denied: true })
+    expect(toOverlayView(projection)).toMatchObject({
+      state: "failed",
+      denied: true,
+    })
+  })
+
   it("rebuilds an allowlist and drops injected private fields", () => {
     const view = toOverlayView({
       state: "arrived",

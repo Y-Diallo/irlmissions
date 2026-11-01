@@ -182,7 +182,11 @@ function Card({
           <div className={`show-result show-result--${overlay.state}`}>
             <span>MISSION</span>
             <strong>
-              {overlay.state === "completed" ? "COMPLETE" : "FAILED"}
+              {overlay.state === "completed"
+                ? "COMPLETE"
+                : overlay.denied
+                  ? "DENIED"
+                  : "FAILED"}
             </strong>
           </div>
         ) : (
@@ -230,9 +234,16 @@ function Card({
         {overlay.state === "completed" && (
           <p className="show-result-message">Challenge cleared!</p>
         )}
-        {overlay.state === "failed" && consequences.length === 0 && (
-          <p className="show-result-message">Challenge failed.</p>
+        {overlay.state === "failed" && overlay.denied && (
+          <p className="show-result-message">
+            Streamer denied this mission. No consequence added.
+          </p>
         )}
+        {overlay.state === "failed" &&
+          !overlay.denied &&
+          consequences.length === 0 && (
+            <p className="show-result-message">Challenge failed.</p>
+          )}
       </div>
     </div>
   )

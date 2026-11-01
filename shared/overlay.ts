@@ -47,6 +47,7 @@ export type OverlayProjection =
       state: "completed" | "failed"
       updatedAt: number
       objective: string
+      denied?: true
     } & RevealedPlace &
       ConsequenceView)
 
@@ -169,6 +170,9 @@ export function missionOverlay(
     state: mission.status,
     updatedAt: mission.updatedAt,
     objective: mission.publicLabel,
+    ...(mission.status === "failed" && mission.outcome === "denied"
+      ? { denied: true as const }
+      : {}),
     ...consequenceView(mission, now),
     ...revealedPlace(mission),
   }
@@ -335,6 +339,9 @@ export function toOverlayView(
     state: input.state,
     updatedAt,
     objective,
+    ...(input.state === "failed" && input.denied === true
+      ? { denied: true as const }
+      : {}),
     ...consequence,
     ...place,
   }

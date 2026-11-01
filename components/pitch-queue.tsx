@@ -137,6 +137,8 @@ function StatusBadge({ pitch }: { pitch: PitchReviewItem }) {
   if (pitch.reviewStatus === "active_mission")
     return <Badge>Active mission</Badge>
   if (pitch.reviewStatus === "completed") return <Badge>Completed</Badge>
+  if (pitch.missionOutcome === "denied")
+    return <Badge variant="outline">Denied</Badge>
   if (pitch.reviewStatus === "failed")
     return <Badge variant="destructive">Failed</Badge>
   if (pitch.reviewStatus === "approved") return <Badge>Approved</Badge>
@@ -338,7 +340,9 @@ function PitchCard({
           <CardTitle className="truncate pr-2 text-base">{summary}</CardTitle>
           <CardDescription className="truncate text-xs">
             {pitch.viewerName}
-            {pitch.reviewStatus === "failed" && pitch.failConsequence
+            {pitch.reviewStatus === "failed" &&
+            pitch.missionOutcome !== "denied" &&
+            pitch.failConsequence
               ? ` · Consequence: ${pitch.failConsequence}`
               : ""}
           </CardDescription>

@@ -39,6 +39,7 @@ function statusLabel(mission: MissionOwnerView) {
   if (mission.status === "arrived") return "Mission active"
   if (mission.status === "completed") return "Completed"
   if (mission.status === "canceled") return "Canceled"
+  if (mission.outcome === "denied") return "Denied"
   return "Failed"
 }
 
@@ -319,6 +320,14 @@ export function MissionCard({
                 onClick={() => void act("fail")}
               >
                 Mark failed
+              </Button>
+              <Button
+                variant="outline"
+                className="min-h-14 w-full text-lg sm:col-span-2"
+                disabled={busy}
+                onClick={() => void act("deny")}
+              >
+                Deny — no consequence
               </Button>
             </>
           )}

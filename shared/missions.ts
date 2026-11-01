@@ -49,6 +49,8 @@ export type MissionRecord = {
   arrivedAt?: number
   timerEndsAt?: number
   outcomeAt?: number
+  /** A producer veto: terminal like failure, but never activates its consequence. */
+  outcome?: "denied"
   destinationRevealedAt?: number
 }
 
@@ -65,7 +67,13 @@ export type MissionPitch = {
   noTravel?: unknown
 }
 
-export type MissionAction = "arrive" | "complete" | "fail" | "extend" | "cancel"
+export type MissionAction =
+  | "arrive"
+  | "complete"
+  | "fail"
+  | "deny"
+  | "extend"
+  | "cancel"
 
 export const EXTEND_MS = 5 * 60_000
 
@@ -326,6 +334,7 @@ export function parseMissionAction(value: unknown): MissionAction {
     action !== "arrive" &&
     action !== "complete" &&
     action !== "fail" &&
+    action !== "deny" &&
     action !== "extend" &&
     action !== "cancel"
   ) {
@@ -420,7 +429,7 @@ export function transitionMission(
         (consequence) => consequence.clearRule !== "through_next_mission"
       )
   const activated =
-    target === "failed" && current.failConsequence
+    action === "fail" && current.failConsequence
       ? ({
           consequenceId: `mission:${current.missionId}`,
           text: current.failConsequence,
@@ -445,6 +454,7 @@ export function transitionMission(
       ? { activeConsequences: nextConsequences }
       : {}),
     status: target,
+    ...(action === "deny" ? { outcome: "denied" as const } : {}),
     outcomeAt: now,
     updatedAt: now,
   }

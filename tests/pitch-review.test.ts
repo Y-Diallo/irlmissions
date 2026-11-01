@@ -427,5 +427,10 @@ describe("pitch review transitions", () => {
       processingWarnings: ["stale_location"],
     })
     expect(item).not.toHaveProperty("viewer.id")
+    expect(
+      toPitchReviewItem(
+        record({ reviewStatus: "failed", missionOutcome: "denied" })
+      )
+    ).toMatchObject({ reviewStatus: "failed", missionOutcome: "denied" })
   })
 })

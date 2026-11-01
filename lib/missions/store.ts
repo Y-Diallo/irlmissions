@@ -160,6 +160,7 @@ export function createMissionStore(db: Firestore, tenantId: string) {
         if (terminal) {
           tx.update(pitchRef, {
             reviewStatus: canceled ? "rejected" : next.status,
+            ...(action === "deny" ? { missionOutcome: "denied" } : {}),
             lockedBy: FieldValue.delete(),
             missionOutcomeAt: now,
             ...(canceled ? { rejectionReason: "mission_canceled" } : {}),
