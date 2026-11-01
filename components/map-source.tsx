@@ -1,26 +1,30 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { MapPoint, MapProjection } from "@/shared/map"
+import type {
+  MapPoint,
+  MapProjection,
+  PublicMapDestination,
+} from "@/shared/map"
 
 type LatLng = { lat: number; lng: number }
+type BoundsInstance = { extend(point: LatLng): void }
 type MapInstance = {
   panTo(point: LatLng): void
   setCenter(point: LatLng): void
   setZoom(zoom: number): void
+  fitBounds(bounds: BoundsInstance, padding?: number): void
 }
 type PolylineInstance = {
   setPath(path: LatLng[]): void
-  setMap(map: null): void
-}
-type CircleInstance = {
-  setCenter(point: LatLng): void
-  setRadius(radius: number): void
   setMap(map: MapInstance | null): void
 }
 type MarkerInstance = {
   setPosition(point: LatLng): void
   setMap(map: MapInstance | null): void
+  setLabel(label: string | Record<string, unknown>): void
+  setOpacity(opacity: number): void
+  setZIndex(zIndex: number): void
 }
 type MapsApi = {
   Map: new (
@@ -28,8 +32,8 @@ type MapsApi = {
     options: Record<string, unknown>
   ) => MapInstance
   Polyline: new (options: Record<string, unknown>) => PolylineInstance
-  Circle: new (options: Record<string, unknown>) => CircleInstance
   Marker: new (options: Record<string, unknown>) => MarkerInstance
+  LatLngBounds: new () => BoundsInstance
 }
 
 declare global {
@@ -40,12 +44,14 @@ declare global {
 }
 
 const MIN_TRAIL_DISTANCE_METERS = 8
+const RECAP_DRAW_MS = 2_000
+const RECAP_HOLD_MS = 6_000
 
 function fragmentKey() {
   return decodeURIComponent(window.location.hash.slice(1)).trim()
 }
 
-function point(value: MapPoint): LatLng {
+function point(value: MapPoint | PublicMapDestination): LatLng {
   return { lat: value.latitude, lng: value.longitude }
 }
 
@@ -61,6 +67,34 @@ function distanceMeters(a: LatLng, b: LatLng) {
   return (
     6_371_000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
   )
+}
+
+export function decodePolyline(encoded: string): LatLng[] {
+  const path: LatLng[] = []
+  let index = 0
+  let latitude = 0
+  let longitude = 0
+  while (index < encoded.length) {
+    const read = () => {
+      let result = 0
+      let shift = 0
+      let byte = 0
+      do {
+        if (index >= encoded.length) return null
+        byte = encoded.charCodeAt(index++) - 63
+        result |= (byte & 0x1f) << shift
+        shift += 5
+      } while (byte >= 0x20)
+      return result & 1 ? ~(result >> 1) : result >> 1
+    }
+    const latitudeDelta = read()
+    const longitudeDelta = read()
+    if (latitudeDelta === null || longitudeDelta === null) return []
+    latitude += latitudeDelta
+    longitude += longitudeDelta
+    path.push({ lat: latitude / 1e5, lng: longitude / 1e5 })
+  }
+  return path
 }
 
 function loadMaps() {
@@ -82,16 +116,42 @@ function loadMaps() {
   return window.__irlMapsPromise
 }
 
+function fitPoints(map: MapInstance, api: MapsApi, points: LatLng[]) {
+  if (!points.length) return
+  if (points.length === 1) {
+    map.setCenter(points[0]!)
+    map.setZoom(15)
+    return
+  }
+  const bounds = new api.LatLngBounds()
+  points.forEach((value) => bounds.extend(value))
+  map.fitBounds(bounds, 64)
+}
+
 export function MapSource({ overlayId }: { overlayId: string }) {
   const elementRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapInstance | null>(null)
   const apiRef = useRef<MapsApi | null>(null)
   const trailRef = useRef<LatLng[]>([])
-  const polylineRef = useRef<PolylineInstance | null>(null)
-  const circleRef = useRef<CircleInstance | null>(null)
-  const markerRef = useRef<MarkerInstance | null>(null)
+  const trailLineRef = useRef<PolylineInstance | null>(null)
+  const plannedLineRef = useRef<PolylineInstance | null>(null)
+  const optionMarkersRef = useRef<MarkerInstance[]>([])
+  const destinationMarkerRef = useRef<MarkerInstance | null>(null)
+  const positionMarkerRef = useRef<MarkerInstance | null>(null)
+  const pollKeyRef = useRef<string | undefined>(undefined)
   const missionKeyRef = useRef<string | undefined>(undefined)
+  const cameraKeyRef = useRef<string | undefined>(undefined)
+  const recapPlayedRef = useRef(new Set<string>())
+  const animationFrameRef = useRef<number | undefined>(undefined)
+  const recapTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined
+  )
+  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined
+  )
   const [projection, setProjection] = useState<MapProjection | null>(null)
+  const [mapReady, setMapReady] = useState(false)
+  const [hiddenRecapKey, setHiddenRecapKey] = useState("")
   const [error, setError] = useState("")
 
   const refresh = useCallback(async () => {
@@ -135,23 +195,39 @@ export function MapSource({ overlayId }: { overlayId: string }) {
           streetViewControl: false,
           fullscreenControl: false,
         })
-        polylineRef.current = new api.Polyline({
+        plannedLineRef.current = new api.Polyline({
           map: mapRef.current,
           path: [],
           geodesic: true,
-          strokeColor: "#111827",
+          strokeOpacity: 0,
+          icons: [
+            {
+              icon: {
+                path: "M 0,-1 0,1",
+                strokeColor: "#374151",
+                strokeOpacity: 0.9,
+                strokeWeight: 3,
+                scale: 4,
+              },
+              offset: "0",
+              repeat: "18px",
+            },
+          ],
+        })
+        trailLineRef.current = new api.Polyline({
+          map: mapRef.current,
+          path: [],
+          geodesic: true,
+          strokeColor: "#2563eb",
           strokeOpacity: 1,
           strokeWeight: 7,
         })
-        circleRef.current = new api.Circle({
+        positionMarkerRef.current = new api.Marker({
           map: null,
-          fillColor: "#facc15",
-          fillOpacity: 0.25,
-          strokeColor: "#111827",
-          strokeOpacity: 0.9,
-          strokeWeight: 3,
+          label: { text: "YOU", className: "map-position-label" },
+          zIndex: 100,
         })
-        markerRef.current = new api.Marker({ map: null })
+        setMapReady(true)
       } catch {
         if (!stopped) setError("Google Maps is not configured")
       }
@@ -159,9 +235,14 @@ export function MapSource({ overlayId }: { overlayId: string }) {
     void start()
     return () => {
       stopped = true
-      polylineRef.current?.setMap(null)
-      circleRef.current?.setMap(null)
-      markerRef.current?.setMap(null)
+      cancelAnimationFrame(animationFrameRef.current ?? 0)
+      clearTimeout(recapTimerRef.current)
+      clearTimeout(fadeTimerRef.current)
+      plannedLineRef.current?.setMap(null)
+      trailLineRef.current?.setMap(null)
+      positionMarkerRef.current?.setMap(null)
+      destinationMarkerRef.current?.setMap(null)
+      optionMarkersRef.current.forEach((marker) => marker.setMap(null))
     }
   }, [])
 
@@ -177,81 +258,247 @@ export function MapSource({ overlayId }: { overlayId: string }) {
   useEffect(() => {
     const map = mapRef.current
     const api = apiRef.current
-    const polyline = polylineRef.current
-    const circle = circleRef.current
-    const marker = markerRef.current
-    if (!projection || !map || !api || !polyline || !circle || !marker) return
-
-    if (projection.missionKey !== missionKeyRef.current) {
-      trailRef.current = []
-      polyline.setPath([])
-      missionKeyRef.current = projection.missionKey
-    }
-    if (projection.state === "idle" || !projection.destination) {
-      circle.setMap(null)
-      marker.setMap(null)
-      trailRef.current = []
-      polyline.setPath([])
-      return
-    }
-
-    const destination = {
-      lat: projection.destination.latitude,
-      lng: projection.destination.longitude,
-    }
-    circle.setCenter(destination)
-    circle.setRadius(projection.destination.radiusMeters)
-    circle.setMap(map)
-
-    if (projection.positionStatus === "coarse") {
-      // Clear rather than merely hide the track: when location returns, the
-      // new path cannot draw a revealing line through the suppressed area.
-      trailRef.current = []
-      polyline.setPath([])
-      marker.setMap(null)
-      map.setCenter(destination)
-      map.setZoom(10)
-      return
-    }
-
+    const trailLine = trailLineRef.current
+    const plannedLine = plannedLineRef.current
+    const positionMarker = positionMarkerRef.current
     if (
-      projection.position &&
-      (projection.state === "heading" || projection.state === "arrived")
+      !projection ||
+      !mapReady ||
+      !map ||
+      !api ||
+      !trailLine ||
+      !plannedLine ||
+      !positionMarker
     ) {
-      const next = point(projection.position)
-      const last = trailRef.current.at(-1)
-      if (!last || distanceMeters(last, next) >= MIN_TRAIL_DISTANCE_METERS) {
-        trailRef.current.push(next)
-        polyline.setPath(trailRef.current)
-      }
-      marker.setPosition(next)
-      marker.setMap(map)
-      if (trailRef.current.length === 1) {
-        map.setCenter(next)
-        map.setZoom(15)
-      } else {
-        map.panTo(next)
-      }
+      return
     }
-  }, [projection])
 
-  const hidden = !projection || projection.state === "idle"
+    const clearOptionMarkers = (fade = false) => {
+      clearTimeout(fadeTimerRef.current)
+      const markers = optionMarkersRef.current
+      if (!fade) {
+        markers.forEach((marker) => marker.setMap(null))
+        optionMarkersRef.current = []
+        return
+      }
+      markers.forEach((marker) => marker.setOpacity(0))
+      fadeTimerRef.current = setTimeout(() => {
+        markers.forEach((marker) => marker.setMap(null))
+        optionMarkersRef.current = []
+      }, 500)
+    }
+
+    const hidePositionAndClearTrail = () => {
+      positionMarker.setMap(null)
+      trailRef.current = []
+      trailLine.setPath([])
+    }
+
+    if (projection.state === "idle") {
+      clearOptionMarkers()
+      destinationMarkerRef.current?.setMap(null)
+      plannedLine.setPath([])
+      hidePositionAndClearTrail()
+      cameraKeyRef.current = undefined
+      return
+    }
+
+    if (projection.state === "voting") {
+      const pollKey = projection.pollKey ?? "voting"
+      if (pollKeyRef.current !== pollKey) {
+        clearOptionMarkers()
+        destinationMarkerRef.current?.setMap(null)
+        plannedLine.setPath([])
+        hidePositionAndClearTrail()
+        pollKeyRef.current = pollKey
+        missionKeyRef.current = undefined
+        cameraKeyRef.current = undefined
+        setHiddenRecapKey("")
+      }
+      const options = projection.options ?? []
+      const totalVotes = options.reduce((sum, option) => sum + option.votes, 0)
+      if (optionMarkersRef.current.length !== options.length) {
+        clearOptionMarkers()
+        optionMarkersRef.current = options.map(
+          (option) =>
+            new api.Marker({
+              map,
+              position: point(option.destination),
+              title: `${option.position}. ${option.title} — ${option.destination.name}`,
+              zIndex: 20 + option.position,
+            })
+        )
+      }
+      options.forEach((option, index) => {
+        const percentage = totalVotes
+          ? Math.round((option.votes / totalVotes) * 100)
+          : 0
+        const marker = optionMarkersRef.current[index]!
+        marker.setPosition(point(option.destination))
+        marker.setLabel({
+          text: `${option.position} · ${percentage}% ${option.destination.name}`,
+          className: "map-option-label",
+        })
+        marker.setOpacity(1)
+        marker.setZIndex(20 + option.position)
+        marker.setMap(map)
+      })
+      if (projection.position) {
+        const current = point(projection.position)
+        positionMarker.setPosition(current)
+        positionMarker.setMap(map)
+      } else {
+        positionMarker.setMap(null)
+      }
+      const cameraKey = `voting:${pollKey}`
+      if (cameraKeyRef.current !== cameraKey) {
+        fitPoints(map, api, [
+          ...(projection.position ? [point(projection.position)] : []),
+          ...options.map((option) => point(option.destination)),
+        ])
+        cameraKeyRef.current = cameraKey
+      }
+      return
+    }
+
+    const destination = projection.destination
+    if (!destination) return
+    const destinationPoint = point(destination)
+    if (!destinationMarkerRef.current) {
+      destinationMarkerRef.current = new api.Marker({ map: null })
+    }
+    const destinationMarker = destinationMarkerRef.current
+    destinationMarker.setPosition(destinationPoint)
+    destinationMarker.setLabel({
+      text:
+        projection.state === "arrived"
+          ? `✓ ${destination.name}`
+          : destination.name,
+      className:
+        projection.state === "arrived"
+          ? "map-winner-label map-winner-label--arrived"
+          : "map-winner-label",
+    })
+    destinationMarker.setOpacity(1)
+    destinationMarker.setZIndex(80)
+    destinationMarker.setMap(map)
+    plannedLine.setPath(
+      projection.encodedRoute ? decodePolyline(projection.encodedRoute) : []
+    )
+
+    if (projection.state === "recap") {
+      clearOptionMarkers()
+      positionMarker.setMap(null)
+      const key = projection.missionKey ?? "recap"
+      if (!recapPlayedRef.current.has(key)) {
+        recapPlayedRef.current.add(key)
+        setHiddenRecapKey("")
+        const recordedTrail = [...trailRef.current]
+        const route = projection.encodedRoute
+          ? decodePolyline(projection.encodedRoute)
+          : []
+        fitPoints(map, api, [
+          ...(recordedTrail.length ? recordedTrail : route),
+          destinationPoint,
+        ])
+        cancelAnimationFrame(animationFrameRef.current ?? 0)
+        clearTimeout(recapTimerRef.current)
+        const finish = () => {
+          recapTimerRef.current = setTimeout(
+            () => setHiddenRecapKey(key),
+            RECAP_HOLD_MS
+          )
+        }
+        if (!recordedTrail.length) {
+          trailLine.setPath([])
+          finish()
+        } else {
+          trailLine.setPath([])
+          const startedAt = performance.now()
+          const draw = (timestamp: number) => {
+            const progress = Math.min(
+              1,
+              (timestamp - startedAt) / RECAP_DRAW_MS
+            )
+            const count = Math.max(
+              1,
+              Math.ceil(recordedTrail.length * progress)
+            )
+            trailLine.setPath(recordedTrail.slice(0, count))
+            if (progress < 1)
+              animationFrameRef.current = requestAnimationFrame(draw)
+            else finish()
+          }
+          animationFrameRef.current = requestAnimationFrame(draw)
+        }
+      }
+      return
+    }
+
+    const missionKey = projection.missionKey ?? "mission"
+    if (missionKeyRef.current !== missionKey) {
+      const cameFromVoting = !!pollKeyRef.current
+      clearOptionMarkers(cameFromVoting)
+      missionKeyRef.current = missionKey
+      trailRef.current = []
+      trailLine.setPath([])
+      cameraKeyRef.current = undefined
+    }
+
+    if (!projection.position) {
+      hidePositionAndClearTrail()
+      if (!cameraKeyRef.current) {
+        fitPoints(map, api, [destinationPoint])
+        cameraKeyRef.current = `mission:${missionKey}`
+      }
+      return
+    }
+
+    const current = point(projection.position)
+    const last = trailRef.current.at(-1)
+    if (!last || distanceMeters(last, current) >= MIN_TRAIL_DISTANCE_METERS) {
+      trailRef.current.push(current)
+      trailLine.setPath(trailRef.current)
+    }
+    positionMarker.setPosition(current)
+    positionMarker.setMap(map)
+    const cameraKey = `mission:${missionKey}`
+    if (cameraKeyRef.current !== cameraKey) {
+      fitPoints(map, api, [current, destinationPoint])
+      cameraKeyRef.current = cameraKey
+    } else {
+      map.panTo(current)
+    }
+  }, [mapReady, projection])
+
+  const recapHidden =
+    projection?.state === "recap" && projection.missionKey === hiddenRecapKey
+  const visible = !!projection && projection.state !== "idle" && !recapHidden
+  const stateLabel =
+    projection?.state === "voting"
+      ? "CHAT IS VOTING"
+      : projection?.state === "heading"
+        ? "HEADING THERE"
+        : projection?.state === "arrived"
+          ? "ARRIVED"
+          : projection?.outcome === "completed"
+            ? "MISSION COMPLETE"
+            : "MISSION FAILED"
+
   return (
-    <main className={`map-source${hidden ? "map-source--hidden" : ""}`}>
-      <div ref={elementRef} className="map-source__canvas" />
-      {!hidden && (
-        <div className="map-source__label">
-          <strong>{projection.destination?.name ?? "DESTINATION ZONE"}</strong>
-          <span>
-            {projection.positionStatus === "coarse"
-              ? "LOCATION UNAVAILABLE"
-              : projection.state === "arrived"
-                ? "ARRIVED"
-                : "HEADING THERE"}
-          </span>
-        </div>
-      )}
-      {error && <div className="map-source__warning">{error}</div>}
+    <main className="map-source">
+      <div
+        className={`map-source__card${visible ? "map-source__card--visible" : ""}`}
+      >
+        <div ref={elementRef} className="map-source__canvas" />
+        {visible && (
+          <div className="map-source__label">
+            <strong>MISSION MAP</strong>
+            <span>{stateLabel}</span>
+          </div>
+        )}
+        {error && <div className="map-source__warning">{error}</div>}
+      </div>
     </main>
   )
 }

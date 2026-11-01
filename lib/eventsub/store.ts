@@ -13,7 +13,7 @@ export function createEventSubStore(
   const sessionRef = db.doc(tenantDoc(tenantId, "sessions/current"))
   const publicStateRef = db.doc(tenantDoc(tenantId, "publicState/current"))
 
-  // Reads only; the caller writes the returned projection after its own reads.
+  // Builds both private session totals and the public projection from one read.
   async function readTally(tx: Transaction, tally: PollTally, ended: boolean) {
     const [session, publicState] = await Promise.all([
       tx.get(sessionRef),
@@ -23,11 +23,29 @@ export function createEventSubStore(
     if (poll?.status !== "active" || poll.twitchPollId !== tally.pollId) {
       return null
     }
-    return tallyOverlay(
+    const votesByChoiceId = new Map(
+      tally.choices.map((choice) => [choice.id, choice.votes])
+    )
+    const nextPoll: PollRecord = {
+      ...poll,
+      choices: poll.choices.map((choice, index) => ({
+        ...choice,
+        votes:
+          (choice.twitchChoiceId
+            ? votesByChoiceId.get(choice.twitchChoiceId)
+            : undefined) ??
+          tally.choices[index]?.votes ??
+          choice.votes ??
+          0,
+      })),
+      updatedAt: Date.now(),
+    }
+    const projection = tallyOverlay(
       publicState.data(),
       { choices: tally.choices, ended },
       Date.now()
     )
+    return { projection, poll: nextPoll }
   }
 
   return {
@@ -35,9 +53,10 @@ export function createEventSubStore(
       return db.runTransaction(async (tx) => {
         // Progress events are frequent and idempotent, so they skip receipts.
         if (write.kind === "poll_progress") {
-          const projection = await readTally(tx, write.tally, false)
-          if (!projection) return "ignored"
-          tx.set(publicStateRef, projection)
+          const tally = await readTally(tx, write.tally, false)
+          if (!tally) return "ignored"
+          tx.set(sessionRef, { poll: tally.poll }, { merge: true })
+          if (tally.projection) tx.set(publicStateRef, tally.projection)
           return "tallied"
         }
 
@@ -63,7 +82,7 @@ export function createEventSubStore(
           )
           const pollExists = (await tx.get(pollRef)).exists
           // Show final counts now; the processor applies the winner later.
-          const projection = pollExists
+          const tally = pollExists
             ? null
             : await readTally(tx, write.poll, true)
           tx.create(receiptRef, {
@@ -73,7 +92,10 @@ export function createEventSubStore(
           })
           if (pollExists) return "duplicate-poll"
           tx.create(pollRef, write.poll)
-          if (projection) tx.set(publicStateRef, projection)
+          if (tally) {
+            tx.set(sessionRef, { poll: tally.poll }, { merge: true })
+            if (tally.projection) tx.set(publicStateRef, tally.projection)
+          }
           return "created"
         }
 

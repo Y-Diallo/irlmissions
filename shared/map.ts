@@ -1,8 +1,9 @@
 import type { MissionRecord } from "@/shared/missions"
+import type { PlaceCandidate, WalkingRoute } from "@/shared/pitches/processor"
+import type { PollRecord } from "@/shared/polls"
 
-export const FUZZY_DESTINATION_RADIUS_METERS = 250
 export const MAX_MAP_ACCURACY_METERS = 50
-export const DEFAULT_MAP_LOCATION_MAX_AGE_MS = 120_000
+export const DEFAULT_MAP_LOCATION_MAX_AGE_MS = 30_000
 
 export type MapPoint = {
   latitude: number
@@ -11,19 +12,35 @@ export type MapPoint = {
   accuracyMeters?: number
 }
 
+export type PublicMapDestination = {
+  latitude: number
+  longitude: number
+  name: string
+}
+
+export type PublicMapOption = {
+  position: number
+  title: string
+  votes: number
+  destination: PublicMapDestination
+}
+
 export type MapProjection = {
-  state: "idle" | "heading" | "arrived"
+  state: "idle" | "voting" | "heading" | "arrived" | "recap"
   updatedAt: number
+  pollKey?: string
   missionKey?: string
+  outcome?: "completed" | "failed"
   position?: MapPoint
-  /** All suppression reasons intentionally share one public state. */
-  positionStatus?: "coarse"
-  destination?: {
-    latitude: number
-    longitude: number
-    radiusMeters: number
-    name?: string
-  }
+  options?: PublicMapOption[]
+  destination?: PublicMapDestination
+  encodedRoute?: string
+}
+
+export type MapPitchOption = {
+  title: string
+  votes?: number
+  destination: PlaceCandidate | null
 }
 
 type StoredLocation = Partial<MapPoint> & {
@@ -41,25 +58,11 @@ function stableHash(value: string) {
   return hash >>> 0
 }
 
-function fuzzyDestination(mission: MissionRecord) {
-  if (!mission.destination) return undefined
-  const hash = stableHash(mission.missionId)
-  const angle = ((hash % 3600) / 10) * (Math.PI / 180)
-  const offsetMeters = 60 + ((hash >>> 12) % 81)
-  const latitudeOffset = (Math.cos(angle) * offsetMeters) / 111_320
-  const longitudeScale = Math.max(
-    0.2,
-    Math.cos((mission.destination.latitude * Math.PI) / 180)
-  )
-  const longitudeOffset =
-    (Math.sin(angle) * offsetMeters) / (111_320 * longitudeScale)
+function publicDestination(destination: PlaceCandidate): PublicMapDestination {
   return {
-    latitude: mission.destination.latitude + latitudeOffset,
-    longitude: mission.destination.longitude + longitudeOffset,
-    radiusMeters: FUZZY_DESTINATION_RADIUS_METERS - 30 + ((hash >>> 20) % 101),
-    ...(mission.destinationRevealedAt
-      ? { name: mission.destination.name }
-      : {}),
+    latitude: destination.latitude,
+    longitude: destination.longitude,
+    name: destination.name.slice(0, 120),
   }
 }
 
@@ -67,11 +70,9 @@ function publicPosition(
   location: StoredLocation | null,
   now: number,
   maxAgeMs: number,
-  manuallyCoarse: boolean
-): Pick<MapProjection, "position" | "positionStatus"> {
-  if (manuallyCoarse || !location || location.privacyBlocked) {
-    return { positionStatus: "coarse" }
-  }
+  manuallyHidden: boolean
+): Pick<MapProjection, "position"> {
+  if (manuallyHidden || !location || location.privacyBlocked) return {}
   if (
     typeof location.feedHeartbeatAt !== "number" ||
     now - location.feedHeartbeatAt > maxAgeMs ||
@@ -79,13 +80,13 @@ function publicPosition(
     typeof location.longitude !== "number" ||
     typeof location.observedAt !== "number"
   ) {
-    return { positionStatus: "coarse" }
+    return {}
   }
   if (
     typeof location.accuracyMeters === "number" &&
     location.accuracyMeters > MAX_MAP_ACCURACY_METERS
   ) {
-    return { positionStatus: "coarse" }
+    return {}
   }
   return {
     position: {
@@ -99,31 +100,75 @@ function publicPosition(
   }
 }
 
+function routeGeometry(route: WalkingRoute | null | undefined) {
+  return typeof route?.encodedPolyline === "string" && route.encodedPolyline
+    ? { encodedRoute: route.encodedPolyline }
+    : {}
+}
+
 export function createMapProjection(input: {
   mission: MissionRecord | null
+  poll?: PollRecord | null
+  pollOptions?: MapPitchOption[]
   location: StoredLocation | null
   now: number
   locationMaxAgeMs?: number
-  manuallyCoarse?: boolean
+  manuallyHidden?: boolean
 }): MapProjection {
-  const { mission, now } = input
-  if (
-    !mission ||
-    (mission.status !== "heading" && mission.status !== "arrived") ||
-    !mission.destination
-  ) {
-    return { state: "idle", updatedAt: now }
+  const { mission, poll, now } = input
+  const location = publicPosition(
+    input.location,
+    now,
+    input.locationMaxAgeMs ?? DEFAULT_MAP_LOCATION_MAX_AGE_MS,
+    input.manuallyHidden === true
+  )
+
+  if (poll && (poll.status === "active" || poll.status === "tie")) {
+    const options = (input.pollOptions ?? []).flatMap((option, index) =>
+      option.destination
+        ? [
+            {
+              position: index + 1,
+              title: option.title.slice(0, 25),
+              votes: Math.max(0, option.votes ?? 0),
+              destination: publicDestination(option.destination),
+            },
+          ]
+        : []
+    )
+    if (options.length) {
+      return {
+        state: "voting",
+        updatedAt: now,
+        pollKey: String(stableHash(poll.attemptId)),
+        ...location,
+        options,
+      }
+    }
   }
-  return {
-    state: mission.status,
-    updatedAt: now,
-    missionKey: String(stableHash(mission.missionId)),
-    ...publicPosition(
-      input.location,
-      now,
-      input.locationMaxAgeMs ?? DEFAULT_MAP_LOCATION_MAX_AGE_MS,
-      input.manuallyCoarse === true
-    ),
-    destination: fuzzyDestination(mission),
+
+  if (!mission?.destination) return { state: "idle", updatedAt: now }
+  const missionKey = String(stableHash(mission.missionId))
+  const destination = publicDestination(mission.destination)
+  if (mission.status === "heading" || mission.status === "arrived") {
+    return {
+      state: mission.status,
+      updatedAt: now,
+      missionKey,
+      ...location,
+      destination,
+      ...routeGeometry(mission.walkingRoute),
+    }
   }
+  if (mission.status === "completed" || mission.status === "failed") {
+    return {
+      state: "recap",
+      updatedAt: now,
+      missionKey,
+      outcome: mission.status,
+      destination,
+      ...routeGeometry(mission.walkingRoute),
+    }
+  }
+  return { state: "idle", updatedAt: now }
 }

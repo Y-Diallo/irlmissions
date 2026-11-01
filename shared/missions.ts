@@ -68,12 +68,7 @@ export type MissionPitch = {
 }
 
 export type MissionAction =
-  | "arrive"
-  | "complete"
-  | "fail"
-  | "deny"
-  | "extend"
-  | "cancel"
+  "arrive" | "complete" | "fail" | "deny" | "extend" | "cancel"
 
 export const EXTEND_MS = 5 * 60_000
 
@@ -140,6 +135,9 @@ function validWalkingRoute(value: unknown): WalkingRoute {
     durationSeconds: route.durationSeconds,
     mode:
       mode === "transit" || mode === "drive" || mode === "walk" ? mode : "walk",
+    ...(typeof route.encodedPolyline === "string" && route.encodedPolyline
+      ? { encodedPolyline: route.encodedPolyline }
+      : {}),
   }
 }
 

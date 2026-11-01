@@ -497,6 +497,9 @@ export function SetupConsole() {
             </div>
             <div>
               <p className="mb-1 text-sm font-medium">Optional live map</p>
+              <p className="mb-2 text-sm text-muted-foreground">
+                The map publicly shows exactly where you&apos;re going.
+              </p>
               <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <p className="rounded bg-muted p-3 font-mono text-sm break-all">
                   {mapUrl}

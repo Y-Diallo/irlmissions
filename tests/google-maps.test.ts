@@ -83,9 +83,7 @@ describe("Google Maps providers", () => {
         },
       },
     })
-    expect(request.locationBias.circle.center).not.toHaveProperty(
-      "observedAt"
-    )
+    expect(request.locationBias.circle.center).not.toHaveProperty("observedAt")
   })
 
   it("gets fresh photo metadata at reveal time without exposing the API key", async () => {
@@ -212,7 +210,15 @@ describe("Google Maps providers", () => {
 
   it("requests the selected route mode without an invalid routing preference", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
-      Response.json({ routes: [{ distanceMeters: 1234, duration: "612.4s" }] })
+      Response.json({
+        routes: [
+          {
+            distanceMeters: 1234,
+            duration: "612.4s",
+            polyline: { encodedPolyline: "encoded-route" },
+          },
+        ],
+      })
     )
     const provider = createGoogleRoutesProvider(
       { apiKey: "google-secret" },
@@ -234,6 +240,7 @@ describe("Google Maps providers", () => {
       distanceMeters: 1234,
       durationSeconds: 613,
       mode: "transit",
+      encodedPolyline: "encoded-route",
     })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe(
@@ -251,7 +258,8 @@ describe("Google Maps providers", () => {
       longitude: -122.41,
     })
     expect(init?.headers).toMatchObject({
-      "X-Goog-FieldMask": "routes.distanceMeters,routes.duration",
+      "X-Goog-FieldMask":
+        "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline",
     })
   })
 

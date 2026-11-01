@@ -78,8 +78,13 @@ export function createFakePitchProviders(
       },
     },
     routes: {
-      async walk(_origin, _destination, mode) {
-        return { distanceMeters: 420, durationSeconds: 360, mode }
+      async walk(origin, destination, mode) {
+        return {
+          distanceMeters: 420,
+          durationSeconds: 360,
+          mode,
+          encodedPolyline: encodePolyline([origin, destination]),
+        }
       },
     },
     duplicates: {
@@ -88,4 +93,31 @@ export function createFakePitchProviders(
       },
     },
   }
+}
+
+function encodePolyline(
+  points: Array<{ latitude: number; longitude: number }>
+) {
+  let previousLatitude = 0
+  let previousLongitude = 0
+  let result = ""
+  for (const point of points) {
+    const latitude = Math.round(point.latitude * 1e5)
+    const longitude = Math.round(point.longitude * 1e5)
+    result += encodeValue(latitude - previousLatitude)
+    result += encodeValue(longitude - previousLongitude)
+    previousLatitude = latitude
+    previousLongitude = longitude
+  }
+  return result
+}
+
+function encodeValue(value: number) {
+  let encoded = ""
+  let next = value < 0 ? ~(value << 1) : value << 1
+  while (next >= 0x20) {
+    encoded += String.fromCharCode((0x20 | (next & 0x1f)) + 63)
+    next >>= 5
+  }
+  return encoded + String.fromCharCode(next + 63)
 }

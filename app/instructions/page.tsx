@@ -96,8 +96,8 @@ export default function InstructionsPage() {
             mission immediately where you are.
           </p>
           <p>
-            <strong>Hide live map position:</strong> shows a coarse map without
-            a marker or trail.
+            <strong>Hide live map position:</strong> removes your marker and
+            trail while keeping public destination pins visible.
           </p>
           <p>
             <strong>Simulator:</strong> in a demo session, inject pitches and

@@ -233,6 +233,68 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
       ).resolves.toBe("duplicate-redemption")
     })
 
+    it("stores live Twitch poll totals for map voting pins", async () => {
+      const db = getAdminFirestore(admin)
+      await db.doc("owners/42/sessions/current").set({
+        poll: {
+          attemptId: "attempt-a",
+          lockId: "lock-a",
+          status: "active",
+          title: "What should we do next?",
+          durationSeconds: 120,
+          requestedAt: 1000,
+          updatedAt: 1000,
+          twitchPollId: "poll-a",
+          startedAt: 1000,
+          choices: [
+            {
+              redemptionId: "redemption-a",
+              title: "First",
+              twitchChoiceId: "choice-a",
+              votes: 0,
+            },
+            {
+              redemptionId: "redemption-b",
+              title: "Second",
+              twitchChoiceId: "choice-b",
+              votes: 0,
+            },
+          ],
+        },
+      })
+
+      await expect(
+        createEventSubStore(db, "42").save({
+          kind: "poll_progress",
+          receipt: {
+            messageId: "poll-progress-a",
+            messageType: "notification",
+            subscriptionId: "poll-progress-subscription",
+            subscriptionType: "channel.poll.progress",
+            subscriptionVersion: "1",
+            subscriptionStatus: "enabled",
+            receivedAt: 2000,
+          },
+          tally: {
+            pollId: "poll-a",
+            // Reversed to prove Twitch choice IDs, not array order, win.
+            choices: [
+              { id: "choice-b", title: "Second", votes: 7 },
+              { id: "choice-a", title: "First", votes: 3 },
+            ],
+          },
+        })
+      ).resolves.toBe("tallied")
+
+      const session = (
+        await db.doc("owners/42/sessions/current").get()
+      ).data()
+      expect(session?.poll.choices).toMatchObject([
+        { twitchChoiceId: "choice-a", votes: 3 },
+        { twitchChoiceId: "choice-b", votes: 7 },
+      ])
+    })
+
     it("isolates identical event IDs and overlay credentials between tenants", async () => {
       const db = getAdminFirestore(admin)
       const receipt = {

@@ -82,6 +82,8 @@ export type WalkingRoute = {
   distanceMeters: number
   durationSeconds: number
   mode?: TravelMode
+  /** Google Routes geometry used only by the optional public map source. */
+  encodedPolyline?: string
 }
 
 export type DuplicateSuggestion = {
@@ -390,7 +392,11 @@ function validateRoute(route: WalkingRoute) {
     !Number.isFinite(route.distanceMeters) ||
     route.distanceMeters < 0 ||
     !Number.isFinite(route.durationSeconds) ||
-    route.durationSeconds < 0
+    route.durationSeconds < 0 ||
+    (route.encodedPolyline !== undefined &&
+      (typeof route.encodedPolyline !== "string" ||
+        !route.encodedPolyline ||
+        route.encodedPolyline.length > 100_000))
   ) {
     throw new ProcessingError("invalid_route_response")
   }

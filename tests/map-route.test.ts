@@ -26,7 +26,14 @@ describe("scoped map route", () => {
     mocks.readMapProjection.mockResolvedValue({
       state: "heading",
       updatedAt: 1,
-      positionStatus: "coarse",
+      destination: {
+        name: "Pike Place Market",
+        latitude: 47.6097,
+        longitude: -122.3425,
+      },
+      position: null,
+      positionStatus: "stale",
+      encodedRoute: "route-polyline",
     })
     const response = await GET(
       new Request("http://localhost/api/map", {
@@ -40,7 +47,14 @@ describe("scoped map route", () => {
     await expect(response.json()).resolves.toEqual({
       state: "heading",
       updatedAt: 1,
-      positionStatus: "coarse",
+      destination: {
+        name: "Pike Place Market",
+        latitude: 47.6097,
+        longitude: -122.3425,
+      },
+      position: null,
+      positionStatus: "stale",
+      encodedRoute: "route-polyline",
     })
     expect(mocks.readMapProjection).toHaveBeenCalledWith(
       { synthetic: true },

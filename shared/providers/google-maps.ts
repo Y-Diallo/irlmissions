@@ -412,7 +412,7 @@ export function createGoogleRoutesProvider(
             travelMode: mode.toUpperCase(),
             computeAlternativeRoutes: false,
           },
-          "routes.distanceMeters,routes.duration",
+          "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline",
           fetchImpl
         )
       )
@@ -421,6 +421,7 @@ export function createGoogleRoutesProvider(
       )
       const distance = route?.distanceMeters
       const duration = durationSeconds(route?.duration)
+      const polyline = object(route?.polyline)?.encodedPolyline
       if (
         !Number.isSafeInteger(distance) ||
         (distance as number) < 0 ||
@@ -432,6 +433,9 @@ export function createGoogleRoutesProvider(
         distanceMeters: distance as number,
         durationSeconds: duration,
         mode,
+        ...(typeof polyline === "string" && polyline
+          ? { encodedPolyline: polyline }
+          : {}),
       }
     },
   }
