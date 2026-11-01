@@ -94,6 +94,38 @@ describe("pitch processor", () => {
     expect(state.rejected).toBeNull()
   })
 
+  it("skips place search for an anywhere pitch", async () => {
+    const state = fixture("Walk backwards while trick or treating [anywhere]")
+    await expect(processPitch("redemption-1", state.deps)).resolves.toEqual({
+      kind: "ready_for_review",
+      flagged: false,
+    })
+    expect(state.completed).toMatchObject({
+      destination: null,
+      walkingRoute: null,
+      straightLineMeters: null,
+      extraction: { anywhere: true },
+    })
+    expect(state.deps.places.search).not.toHaveBeenCalled()
+    expect(state.deps.routes.walk).not.toHaveBeenCalled()
+  })
+
+  it("skips place search when the owner forced no travel", async () => {
+    const state = fixture()
+    vi.mocked(state.deps.store.claim).mockImplementationOnce(
+      async (redemptionId, leaseId) => ({
+        redemptionId,
+        rawText: "Eat a sandwich at the cafe",
+        attempt: 1,
+        leaseId,
+        noTravel: true,
+      })
+    )
+    await processPitch("redemption-1", state.deps)
+    expect(state.deps.places.search).not.toHaveBeenCalled()
+    expect(state.completed).toMatchObject({ destination: null })
+  })
+
   it("uses and stores the streamer's selected travel mode", async () => {
     const state = fixture()
     state.context.travelMode = "drive"

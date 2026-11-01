@@ -47,6 +47,7 @@ export function createFakePitchProviders(
           ),
           durationMinutes: 10,
           riskFlags,
+          anywhere: text.includes("[anywhere]"),
         }
       },
     },

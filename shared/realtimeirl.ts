@@ -176,7 +176,8 @@ export function evaluateRealtimeIrlArrival(input: {
       nextConfirmation: null,
     }
   }
-  if (mission.destinationRevealedAt) {
+  // An anywhere mission has no place to arrive at or reveal.
+  if (mission.destinationRevealedAt || !mission.destination) {
     return {
       status: "already_revealed",
       fresh: true,

@@ -34,12 +34,18 @@ const schema = {
     "durationMinutes",
     "riskFlags",
     "failConsequence",
+    "anywhere",
   ],
   properties: {
+    anywhere: {
+      type: "boolean",
+      description:
+        "True when the challenge can be done anywhere and names no kind of place to go (e.g. \"walk backwards while trick or treating\", \"do 20 pushups\"). False when it needs a business, attraction, park, or kind of place (e.g. \"eat at Taco Bell\", \"find a pumpkin patch\").",
+    },
     placeQuery: {
       type: "string",
       description:
-        "A concise search query for a real public business, attraction, park, or activity explicitly requested by the viewer.",
+        "A concise search query for a real public business, attraction, park, or activity explicitly requested by the viewer. Empty string when anywhere is true.",
     },
     challenge: {
       type: "string",

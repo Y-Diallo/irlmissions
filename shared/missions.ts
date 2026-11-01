@@ -16,8 +16,9 @@ export type MissionRecord = {
   status: MissionStatus
   publicLabel: string
   durationMinutes: number
-  destination: PlaceCandidate
-  walkingRoute: WalkingRoute
+  /** Null for an "anywhere" mission, which starts with its timer running. */
+  destination: PlaceCandidate | null
+  walkingRoute: WalkingRoute | null
   activatedAt: number
   updatedAt: number
   arrivedAt?: number
@@ -36,6 +37,7 @@ export type MissionPitch = {
   lockedBy?: unknown
   viewer?: unknown
   extraction?: unknown
+  noTravel?: unknown
 }
 
 export type MissionAction = "arrive" | "complete" | "fail" | "extend"
@@ -47,7 +49,7 @@ export type MissionOwnerView = MissionRecord & {
     googleMaps: string
     appleMaps: string
     waze: string
-  }
+  } | null
 }
 
 export class MissionError extends Error {
@@ -178,6 +180,22 @@ function missionFromPitch(
   }
   const viewerName = object(pitch.viewer)?.name
   const failConsequence = object(pitch.extraction)?.failConsequence
+  // An anywhere mission has nowhere to travel, so its timer starts at once.
+  const anywhere =
+    object(pitch.extraction)?.anywhere === true || pitch.noTravel === true
+  const place = anywhere
+    ? {
+        status: "arrived" as const,
+        arrivedAt: now,
+        timerEndsAt: now + (durationMinutes as number) * 60_000,
+        destination: null,
+        walkingRoute: null,
+      }
+    : {
+        status: "heading" as const,
+        destination: validDestination(pitch.destination),
+        walkingRoute: validWalkingRoute(pitch.walkingRoute),
+      }
   return {
     ...(typeof failConsequence === "string" && failConsequence.trim()
       ? { failConsequence: failConsequence.trim().slice(0, 80) }
@@ -189,11 +207,9 @@ function missionFromPitch(
     ...(typeof viewerName === "string" && viewerName.trim()
       ? { viewerName: viewerName.trim().slice(0, 25) }
       : {}),
-    status: "heading",
     publicLabel,
     durationMinutes: durationMinutes as number,
-    destination: validDestination(pitch.destination),
-    walkingRoute: validWalkingRoute(pitch.walkingRoute),
+    ...place,
     activatedAt: now,
     updatedAt: now,
   }
@@ -299,6 +315,8 @@ export function missionNavigation(
 export function toMissionOwnerView(record: MissionRecord): MissionOwnerView {
   return {
     ...record,
-    navigation: missionNavigation(record.destination, record.walkingRoute.mode),
+    navigation: record.destination
+      ? missionNavigation(record.destination, record.walkingRoute?.mode)
+      : null,
   }
 }

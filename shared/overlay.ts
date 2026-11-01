@@ -106,7 +106,7 @@ export function tallyOverlay(
 }
 
 function revealedPlace(mission: MissionRecord): RevealedPlace {
-  if (!mission.destinationRevealedAt) return {}
+  if (!mission.destinationRevealedAt || !mission.destination) return {}
   return {
     placeName: mission.destination.name,
     hasPlacePhoto: true,

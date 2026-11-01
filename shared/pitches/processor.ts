@@ -16,6 +16,8 @@ export type ProcessingPitch = {
   rawText: string
   attempt: number
   leaseId: string
+  /** Owner forced no travel, so skip the place search. */
+  noTravel?: boolean
 }
 
 export type ProcessingContext = {
@@ -42,6 +44,8 @@ export type PitchExtraction = {
   riskFlags: RiskFlag[]
   /** What the viewer said should happen on failure; "" when none. */
   failConsequence?: string
+  /** True when the challenge can be done anywhere, with no place to find. */
+  anywhere?: boolean
 }
 
 export const MAX_FAIL_CONSEQUENCE_LENGTH = 80
@@ -71,10 +75,11 @@ export type DuplicateSuggestion = {
 
 export type ReviewPitch = {
   extraction: PitchExtraction
-  destination: PlaceCandidate
-  walkingRoute: WalkingRoute
+  /** Null for an "anywhere" pitch, which has no place or route. */
+  destination: PlaceCandidate | null
+  walkingRoute: WalkingRoute | null
   duplicateSuggestions: DuplicateSuggestion[]
-  straightLineMeters: number
+  straightLineMeters: number | null
   warnings: ProcessingWarning[]
 }
 
@@ -254,8 +259,14 @@ export function validateExtraction(value: PitchExtraction): PitchExtraction {
       reason: cleanText(flag.reason, 300, "invalid_extraction"),
     }
   })
+  const anywhere = value.anywhere === true
   return {
-    placeQuery: cleanText(value.placeQuery, 300, "invalid_extraction"),
+    // An anywhere pitch has nothing to search for.
+    placeQuery: anywhere
+      ? typeof value.placeQuery === "string"
+        ? value.placeQuery.trim().slice(0, 300)
+        : ""
+      : cleanText(value.placeQuery, 300, "invalid_extraction"),
     challenge: cleanText(value.challenge, 500, "invalid_extraction"),
     publicLabelSuggestion: cleanText(
       fitPollLabel(
@@ -267,6 +278,7 @@ export function validateExtraction(value: PitchExtraction): PitchExtraction {
     durationMinutes,
     riskFlags,
     failConsequence: fitConsequence(value.failConsequence),
+    anywhere,
   }
 }
 
@@ -398,6 +410,28 @@ export async function processPitch(
           )
         )
       : fallbackExtraction(pitch.rawText, context.defaultDurationMinutes)
+    if (extraction.anywhere || pitch.noTravel) {
+      if (
+        !(await deps.store.complete(
+          pitch,
+          {
+            extraction,
+            destination: null,
+            walkingRoute: null,
+            duplicateSuggestions: [],
+            straightLineMeters: null,
+            warnings,
+          },
+          now
+        ))
+      ) {
+        throw new ProcessingError("claim_lost")
+      }
+      return {
+        kind: "ready_for_review",
+        flagged: extraction.riskFlags.length > 0,
+      }
+    }
     const candidates = await providerStep("places_unavailable", () =>
       deps.places.search({
         query: extraction.placeQuery,

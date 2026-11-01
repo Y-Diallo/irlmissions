@@ -32,16 +32,18 @@ export type ReviewRecord = {
     automaticRetryAt?: number | null
   }
   extraction?: PitchExtraction
-  destination?: PlaceCandidate
-  walkingRoute?: WalkingRoute
+  destination?: PlaceCandidate | null
+  walkingRoute?: WalkingRoute | null
   duplicateSuggestions?: DuplicateSuggestion[]
-  straightLineMeters?: number
+  straightLineMeters?: number | null
   processingWarnings?: ProcessingWarning[]
   publicLabel?: string
   durationMinutes?: number
   rejectionReason?: string
   approvedAt?: number
   lockedBy?: string
+  /** Owner-forced anywhere mission, kept across reprocessing. */
+  noTravel?: boolean
   redemptionStatus?: "unfulfilled" | "fulfilled" | "canceled"
   redemptionResolution?: RedemptionResolution
 }
@@ -64,6 +66,10 @@ export type PitchReviewItem = {
   durationMinutes: number
   riskFlags: RiskFlag[]
   failConsequence: string | null
+  /** No place: the mission is done wherever the streamer is. */
+  anywhere: boolean
+  /** The owner forced no travel (vs. the AI deciding it). */
+  noTravel: boolean
   destination: PlaceCandidate | null
   walkingRoute: WalkingRoute | null
   duplicateSuggestions: DuplicateSuggestion[]
@@ -78,6 +84,7 @@ export type PitchReviewItem = {
 export type ReviewCommand =
   | { action: "edit_raw"; rawText: string }
   | { action: "edit_details"; publicLabel: string; durationMinutes: number }
+  | { action: "set_no_travel"; noTravel: boolean }
   | { action: "approve" }
   | { action: "reject" }
   | { action: "retry" | "retry_resolution" }
@@ -138,6 +145,11 @@ export function parseReviewCommand(value: unknown): ReviewCommand {
         durationMinutes: durationMinutes as number,
       }
     }
+    case "set_no_travel":
+      if (typeof input.noTravel !== "boolean") {
+        throw new PitchReviewError("invalid_command", 400)
+      }
+      return { action: "set_no_travel", noTravel: input.noTravel }
     case "approve":
     case "reject":
     case "retry":
@@ -175,6 +187,8 @@ export function toPitchReviewItem(record: ReviewRecord): PitchReviewItem {
       record.durationMinutes ?? record.extraction?.durationMinutes ?? 10,
     riskFlags: record.extraction?.riskFlags ?? [],
     failConsequence: record.extraction?.failConsequence || null,
+    anywhere: isAnywhere(record),
+    noTravel: record.noTravel === true,
     destination: record.destination ?? null,
     walkingRoute: record.walkingRoute ?? null,
     duplicateSuggestions: record.duplicateSuggestions ?? [],
@@ -192,9 +206,9 @@ function editable(record: ReviewRecord) {
 
 function reviewable(record: ReviewRecord) {
   editable(record)
-  if (!record.extraction || !record.destination) {
-    throw new PitchReviewError("pitch_not_ready")
-  }
+  if (!record.extraction) throw new PitchReviewError("pitch_not_ready")
+  if (isAnywhere(record)) return
+  if (!record.destination) throw new PitchReviewError("pitch_not_ready")
   if (!record.walkingRoute) throw new PitchReviewError("route_not_ready")
 }
 
@@ -226,6 +240,49 @@ export function isRevivable(record: ReviewRecord) {
   )
 }
 
+function reprocess(
+  record: ReviewRecord,
+  values: Record<string, unknown>,
+  now: number
+): ReviewUpdate {
+  const revive = isRevivable(record)
+  if (
+    !revive &&
+    !["pending_review", "approved"].includes(record.reviewStatus)
+  ) {
+    throw new PitchReviewError("pitch_not_editable")
+  }
+  return {
+    values: {
+      ...values,
+      reviewStatus: "processing",
+      processing: { status: "pending", attempts: 0, nextAttemptAt: now },
+      updatedAt: now,
+    },
+    deleteFields: [
+      ...(revive ? ["redemptionResolution"] : []),
+      "approvedAt",
+      "rejectionReason",
+      "extraction",
+      "destination",
+      "walkingRoute",
+      "duplicateSuggestions",
+      "straightLineMeters",
+      "processingWarnings",
+      "publicLabel",
+      "durationMinutes",
+    ],
+  }
+}
+
+/** The pitch runs with no destination: AI-detected or owner-forced. */
+export function isAnywhere(record: {
+  extraction?: { anywhere?: boolean } | null
+  noTravel?: boolean
+}) {
+  return record.extraction?.anywhere === true || record.noTravel === true
+}
+
 export function transitionPitchReview(
   record: ReviewRecord,
   command: ReviewCommand,
@@ -233,33 +290,23 @@ export function transitionPitchReview(
 ): ReviewUpdate {
   editable(record)
   if (command.action === "edit_raw") {
-    const revive = isRevivable(record)
-    if (
-      !revive &&
-      !["pending_review", "approved"].includes(record.reviewStatus)
-    ) {
+    return reprocess(record, { rawText: command.rawText }, now)
+  }
+  if (command.action === "set_no_travel") {
+    // Forcing no travel on a pitch rejected for having no place revives it.
+    if (command.noTravel && isRevivable(record)) {
+      return reprocess(record, { noTravel: true }, now)
+    }
+    if (!["pending_review", "approved"].includes(record.reviewStatus)) {
       throw new PitchReviewError("pitch_not_editable")
     }
+    // Turning it off needs a place the pitch never searched for.
+    if (!command.noTravel && !record.destination) {
+      throw new PitchReviewError("no_destination_found")
+    }
     return {
-      values: {
-        rawText: command.rawText,
-        reviewStatus: "processing",
-        processing: { status: "pending", attempts: 0, nextAttemptAt: now },
-        updatedAt: now,
-      },
-      deleteFields: [
-        ...(revive ? ["redemptionResolution"] : []),
-        "approvedAt",
-        "rejectionReason",
-        "extraction",
-        "destination",
-        "walkingRoute",
-        "duplicateSuggestions",
-        "straightLineMeters",
-        "processingWarnings",
-        "publicLabel",
-        "durationMinutes",
-      ],
+      values: { noTravel: command.noTravel, updatedAt: now },
+      deleteFields: [],
     }
   }
   if (command.action === "edit_details") {
@@ -287,7 +334,10 @@ export function transitionPitchReview(
       "public_label",
       MAX_POLL_CHOICE_LENGTH
     )
-    if (revealsDestination(publicLabel, record.destination!)) {
+    if (
+      record.destination &&
+      revealsDestination(publicLabel, record.destination)
+    ) {
       throw new PitchReviewError("public_label_reveals_destination", 400)
     }
     const durationMinutes =

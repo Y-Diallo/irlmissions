@@ -53,6 +53,7 @@ export function createPitchStore(db: Firestore, tenantId: string): PitchStore {
           rawText: data.rawText,
           attempt,
           leaseId,
+          noTravel: data.noTravel === true,
         }
       })
     },

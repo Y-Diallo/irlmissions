@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import type { MissionAction, MissionOwnerView } from "@/shared/missions"
+import type { TravelMode } from "@/shared/pitches/processor"
 
 function distance(meters: number) {
   return meters < 1000
@@ -20,7 +21,7 @@ function distance(meters: number) {
     : `${(meters / 1000).toFixed(1)} km`
 }
 
-function travelLabel(mode: MissionOwnerView["walkingRoute"]["mode"]) {
+function travelLabel(mode: TravelMode | undefined) {
   if (mode === "drive") return "driving"
   if (mode === "transit") return "transit"
   return "walking"
@@ -74,6 +75,7 @@ export function MissionCard({
     }
   }
 
+  const { destination, walkingRoute, navigation } = mission
   const remaining = (mission.timerEndsAt ?? now) - now
   const terminal = mission.status === "completed" || mission.status === "failed"
 
@@ -93,75 +95,86 @@ export function MissionCard({
         </div>
       </CardHeader>
       <CardContent className="gap-5">
-        <div className="rounded-lg bg-muted p-4">
-          <p className="text-lg font-semibold">{mission.destination.name}</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {mission.destination.address}
-          </p>
-          <p className="mt-3 text-sm">
-            {distance(mission.walkingRoute.distanceMeters)} ·{" "}
-            {Math.max(1, Math.round(mission.walkingRoute.durationSeconds / 60))}{" "}
-            min {travelLabel(mission.walkingRoute.mode)}
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {mission.destination.hoursText?.[0] ?? "Hours unknown"}
-          </p>
-          {mission.destination.attributions.length > 0 && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              {mission.destination.attributions.map((attribution, index) => (
-                <span
-                  key={`${attribution.provider}-${attribution.providerUri}`}
-                >
-                  {index > 0 ? " · " : ""}
-                  <a
-                    href={attribution.providerUri}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline underline-offset-2"
-                  >
-                    {attribution.provider}
-                  </a>
-                </span>
-              ))}
+        {!destination || !walkingRoute || !navigation ? (
+          <div className="rounded-lg bg-muted p-4">
+            <p className="text-lg font-semibold">Anywhere</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              No destination. Do it right where you are.
             </p>
-          )}
-        </div>
+          </div>
+        ) : (
+          <>
+            <div className="rounded-lg bg-muted p-4">
+              <p className="text-lg font-semibold">{destination.name}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {destination.address}
+              </p>
+              <p className="mt-3 text-sm">
+                {distance(walkingRoute.distanceMeters)} ·{" "}
+                {Math.max(1, Math.round(walkingRoute.durationSeconds / 60))} min{" "}
+                {travelLabel(walkingRoute.mode)}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {destination.hoursText?.[0] ?? "Hours unknown"}
+              </p>
+              {destination.attributions.length > 0 && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {destination.attributions.map((attribution, index) => (
+                    <span
+                      key={`${attribution.provider}-${attribution.providerUri}`}
+                    >
+                      {index > 0 ? " · " : ""}
+                      <a
+                        href={attribution.providerUri}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline underline-offset-2"
+                      >
+                        {attribution.provider}
+                      </a>
+                    </span>
+                  ))}
+                </p>
+              )}
+            </div>
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <a
-            href={mission.navigation.googleMaps}
-            target="_blank"
-            rel="noreferrer"
-            className={buttonVariants({
-              variant: "outline",
-              className: "min-h-12 text-base",
-            })}
-          >
-            Google Maps
-          </a>
-          <a
-            href={mission.navigation.appleMaps}
-            target="_blank"
-            rel="noreferrer"
-            className={buttonVariants({
-              variant: "outline",
-              className: "min-h-12 text-base",
-            })}
-          >
-            Apple Maps
-          </a>
-          <a
-            href={mission.navigation.waze}
-            target="_blank"
-            rel="noreferrer"
-            className={buttonVariants({
-              variant: "outline",
-              className: "min-h-12 text-base",
-            })}
-          >
-            Waze (driving)
-          </a>
-        </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <a
+                href={navigation.googleMaps}
+                target="_blank"
+                rel="noreferrer"
+                className={buttonVariants({
+                  variant: "outline",
+                  className: "min-h-12 text-base",
+                })}
+              >
+                Google Maps
+              </a>
+              <a
+                href={navigation.appleMaps}
+                target="_blank"
+                rel="noreferrer"
+                className={buttonVariants({
+                  variant: "outline",
+                  className: "min-h-12 text-base",
+                })}
+              >
+                Apple Maps
+              </a>
+              <a
+                href={navigation.waze}
+                target="_blank"
+                rel="noreferrer"
+                className={buttonVariants({
+                  variant: "outline",
+                  className: "min-h-12 text-base",
+                })}
+              >
+                Waze (driving)
+              </a>
+            </div>
+          </>
+        )}
 
         {mission.status === "arrived" && (
           <div className="rounded-lg border bg-background p-5 text-center">

@@ -92,6 +92,75 @@ describe("pitch review transitions", () => {
     })
   })
 
+  it("approves an anywhere pitch without a destination", () => {
+    const anywhere = record({
+      extraction: {
+        placeQuery: "",
+        challenge: "Walk backwards while trick or treating",
+        publicLabelSuggestion: "Trick or treat backwards",
+        durationMinutes: 10,
+        riskFlags: [],
+        anywhere: true,
+      },
+      destination: null,
+      walkingRoute: null,
+    })
+    expect(
+      transitionPitchReview(anywhere, { action: "approve" }, now).values
+    ).toMatchObject({ reviewStatus: "approved" })
+    expect(toPitchReviewItem(anywhere)).toMatchObject({
+      anywhere: true,
+      destination: null,
+    })
+  })
+
+  it("forces no travel, and only unforces when a place was found", () => {
+    const forced = transitionPitchReview(
+      record({ reviewStatus: "approved" }),
+      { action: "set_no_travel", noTravel: true },
+      now
+    )
+    expect(forced.values).toEqual({ noTravel: true, updatedAt: now })
+    expect(
+      toPitchReviewItem({ ...record(), noTravel: true })
+    ).toMatchObject({ anywhere: true, noTravel: true })
+    expect(() =>
+      transitionPitchReview(
+        record({ destination: null, noTravel: true }),
+        { action: "set_no_travel", noTravel: false },
+        now
+      )
+    ).toThrow("no_destination_found")
+    expect(
+      parseReviewCommand({ action: "set_no_travel", noTravel: true })
+    ).toEqual({ action: "set_no_travel", noTravel: true })
+    expect(() =>
+      parseReviewCommand({ action: "set_no_travel", noTravel: "yes" })
+    ).toThrow("invalid_command")
+  })
+
+  it("revives a no-place rejection when no travel is forced", () => {
+    const update = transitionPitchReview(
+      record({
+        reviewStatus: "rejected",
+        rejectionReason: "no_public_place",
+        redemptionResolution: {
+          action: "refund",
+          status: "pending",
+          attempts: 0,
+          nextAttemptAt: now,
+        },
+      }),
+      { action: "set_no_travel", noTravel: true },
+      now
+    )
+    expect(update.values).toMatchObject({
+      noTravel: true,
+      reviewStatus: "processing",
+    })
+    expect(update.deleteFields).toContain("redemptionResolution")
+  })
+
   it("lets a rejected pitch be edited only before its refund starts", () => {
     const rejected = record({
       reviewStatus: "rejected",

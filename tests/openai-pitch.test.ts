@@ -26,6 +26,7 @@ const extraction = {
   durationMinutes: 10,
   riskFlags: [],
   failConsequence: "Eat a lemon",
+  anywhere: false,
 }
 
 describe("OpenAI pitch extractor", () => {

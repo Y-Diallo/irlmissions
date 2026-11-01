@@ -26,6 +26,8 @@ const errors: Record<string, string> = {
   pitch_locked: "This pitch is locked by the current poll or mission.",
   pitch_not_ready: "This pitch has not finished processing.",
   pitch_not_editable: "This pitch cannot be edited in its current state.",
+  no_destination_found:
+    "This pitch has no place yet. Edit it to name one and reprocess.",
   pitch_not_approvable: "Only reviewed pitches can be approved.",
   pitch_not_rejectable: "Only reviewed pitches can be rejected.",
   pitch_not_retryable: "This pitch does not currently need a retry.",
@@ -47,7 +49,8 @@ const errors: Record<string, string> = {
   poll_still_active: "Twitch still shows the poll as live. Try again.",
   poll_end_failed:
     "Twitch's result couldn't be applied. Use Pick on a pitch instead.",
-  pitch_not_pickable: "Only approved pitches that aren't in a poll can be picked.",
+  pitch_not_pickable:
+    "Only approved pitches that aren't in a poll can be picked.",
   mission_not_arrived:
     "Mark the destination as arrived before choosing an outcome.",
   mission_finished: "This mission already has an outcome.",
@@ -197,8 +200,8 @@ function PitchCard({
             <AlertDescription>
               {processingErrors[pitch.processing.errorCode ?? ""] ??
                 pitch.processing.errorCode ??
-                "Provider unavailable"} Attempts:{" "}
-              {pitch.processing.attempts}.
+                "Provider unavailable"}{" "}
+              Attempts: {pitch.processing.attempts}.
             </AlertDescription>
           </Alert>
         )}
@@ -243,94 +246,133 @@ function PitchCard({
           )}
         </div>
 
-        {reviewed && pitch.destination && pitch.walkingRoute && (
-          <>
-            <div className="rounded-lg bg-muted p-4">
-              <p className="font-medium">{pitch.destination.name}</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {pitch.destination.address}
-              </p>
-              <p className="mt-2 text-sm">
-                {routeDistance(pitch.walkingRoute.distanceMeters)} ·{" "}
-                {Math.max(
-                  1,
-                  Math.round(pitch.walkingRoute.durationSeconds / 60)
-                )}{" "}
-                min {travelLabel(pitch.walkingRoute.mode)}
-              </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {pitch.destination.hoursText?.[0] ?? "Hours unknown"}
-              </p>
-              <p className="mt-3 text-xs text-muted-foreground">
-                <a
-                  href={pitch.destination.googleMapsUri}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline underline-offset-2"
-                >
-                  Google Maps
-                </a>
-                {pitch.destination.attributions.map((attribution) => (
-                  <span
-                    key={`${attribution.provider}-${attribution.providerUri}`}
-                  >
-                    {" · "}
-                    <a
-                      href={attribution.providerUri}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline underline-offset-2"
-                    >
-                      {attribution.provider}
-                    </a>
-                  </span>
-                ))}
-              </p>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
-              <div className="grid gap-2">
-                <Label htmlFor={`label-${pitch.redemptionId}`}>
-                  Public poll label (no address or local business names)
-                </Label>
-                <Textarea
-                  id={`label-${pitch.redemptionId}`}
-                  value={publicLabel}
-                  maxLength={25}
-                  disabled={busy || pitch.locked}
-                  className="min-h-20 text-base"
-                  onChange={(event) => setPublicLabel(event.target.value)}
-                />
-              </div>
-              <div className="grid content-start gap-2">
-                <Label htmlFor={`duration-${pitch.redemptionId}`}>
-                  Minutes
-                </Label>
-                <Input
-                  id={`duration-${pitch.redemptionId}`}
-                  type="number"
-                  min={1}
-                  max={120}
-                  value={duration}
-                  disabled={busy || pitch.locked}
-                  className="min-h-12 text-base"
-                  onChange={(event) => setDuration(event.target.value)}
-                />
-              </div>
-            </div>
-
-            {pitch.duplicateSuggestions.length > 0 && (
-              <Alert>
-                <AlertTitle>Possible duplicate</AlertTitle>
-                <AlertDescription>
-                  {pitch.duplicateSuggestions
-                    .map((duplicate) => duplicate.summary)
-                    .join("; ")}
-                </AlertDescription>
-              </Alert>
-            )}
-          </>
+        {(reviewed || pitch.revivable) && (
+          <label className="flex min-h-12 cursor-pointer items-center gap-3 text-base">
+            <input
+              type="checkbox"
+              className="size-5 accent-primary"
+              checked={pitch.anywhere}
+              disabled={
+                busy || pitch.locked || (pitch.anywhere && !pitch.noTravel)
+              }
+              onChange={(event) =>
+                void act(() =>
+                  mutate(pitch, {
+                    action: "set_no_travel",
+                    noTravel: event.target.checked,
+                  })
+                )
+              }
+            />
+            <span>
+              No travel (do it where I am)
+              {pitch.anywhere && !pitch.noTravel && (
+                <span className="block text-sm text-muted-foreground">
+                  The pitch names no place. Edit it to add one.
+                </span>
+              )}
+            </span>
+          </label>
         )}
+        {reviewed && pitch.anywhere && (
+          <div className="rounded-lg bg-muted p-4">
+            <p className="font-medium">Anywhere</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              No destination. If chosen, the timer starts right away.
+            </p>
+          </div>
+        )}
+        {reviewed &&
+          !pitch.anywhere &&
+          pitch.destination &&
+          pitch.walkingRoute && (
+            <>
+              <div className="rounded-lg bg-muted p-4">
+                <p className="font-medium">{pitch.destination.name}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {pitch.destination.address}
+                </p>
+                <p className="mt-2 text-sm">
+                  {routeDistance(pitch.walkingRoute.distanceMeters)} ·{" "}
+                  {Math.max(
+                    1,
+                    Math.round(pitch.walkingRoute.durationSeconds / 60)
+                  )}{" "}
+                  min {travelLabel(pitch.walkingRoute.mode)}
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {pitch.destination.hoursText?.[0] ?? "Hours unknown"}
+                </p>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  <a
+                    href={pitch.destination.googleMapsUri}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline underline-offset-2"
+                  >
+                    Google Maps
+                  </a>
+                  {pitch.destination.attributions.map((attribution) => (
+                    <span
+                      key={`${attribution.provider}-${attribution.providerUri}`}
+                    >
+                      {" · "}
+                      <a
+                        href={attribution.providerUri}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline underline-offset-2"
+                      >
+                        {attribution.provider}
+                      </a>
+                    </span>
+                  ))}
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
+                <div className="grid gap-2">
+                  <Label htmlFor={`label-${pitch.redemptionId}`}>
+                    Public poll label (no address or local business names)
+                  </Label>
+                  <Textarea
+                    id={`label-${pitch.redemptionId}`}
+                    value={publicLabel}
+                    maxLength={25}
+                    disabled={busy || pitch.locked}
+                    className="min-h-20 text-base"
+                    onChange={(event) => setPublicLabel(event.target.value)}
+                  />
+                </div>
+                <div className="grid content-start gap-2">
+                  <Label htmlFor={`duration-${pitch.redemptionId}`}>
+                    Minutes
+                  </Label>
+                  <Input
+                    id={`duration-${pitch.redemptionId}`}
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={duration}
+                    disabled={busy || pitch.locked}
+                    className="min-h-12 text-base"
+                    onChange={(event) => setDuration(event.target.value)}
+                  />
+                </div>
+              </div>
+
+              {pitch.duplicateSuggestions.length > 0 && (
+                <Alert>
+                  <AlertTitle>Possible duplicate</AlertTitle>
+                  <AlertDescription>
+                    {pitch.duplicateSuggestions
+                      .map((duplicate) => duplicate.summary)
+                      .join("; ")}
+                  </AlertDescription>
+                </Alert>
+              )}
+            </>
+          )}
 
         {pitch.reviewStatus === "rejected" && (
           <p className="text-sm text-muted-foreground">
@@ -729,9 +771,9 @@ export function PitchQueue() {
                 ? "Twitch chat is choosing the next objective."
                 : tied.length
                   ? "Chat tied. Pick the mission from the tied choices."
-                : missionInProgress
-                  ? "Finish the current mission before starting another poll."
-                  : "Choose 2–5 approved pitches. Poll labels never include the address."}
+                  : missionInProgress
+                    ? "Finish the current mission before starting another poll."
+                    : "Choose 2–5 approved pitches. Poll labels never include the address."}
             </CardDescription>
           </CardHeader>
           <CardContent className="gap-3">

@@ -3,9 +3,11 @@ import {
   createMissionFromWinner,
   missionNavigation,
   parseMissionAction,
+  toMissionOwnerView,
   transitionMission,
   type MissionRecord,
 } from "@/shared/missions"
+import { missionOverlay } from "@/shared/overlay"
 import type { PollRecord } from "@/shared/polls"
 
 const now = Date.parse("2026-10-30T23:00:00Z")
@@ -88,6 +90,32 @@ describe("mission state", () => {
         now
       )
     ).toThrow("mission_label_mismatch")
+  })
+
+  it("starts an anywhere mission with its timer already running", () => {
+    const anywhere = createMissionFromWinner(
+      poll,
+      {
+        ...pitch,
+        destination: undefined,
+        walkingRoute: undefined,
+        extraction: { anywhere: true },
+      },
+      now
+    )
+    expect(anywhere).toMatchObject({
+      status: "arrived",
+      arrivedAt: now,
+      timerEndsAt: now + 600_000,
+      destination: null,
+      walkingRoute: null,
+    })
+    expect(toMissionOwnerView(anywhere).navigation).toBeNull()
+    expect(missionOverlay(anywhere)).toMatchObject({
+      state: "arrived",
+      timerEndsAt: now + 600_000,
+    })
+    expect(missionOverlay(anywhere)).not.toHaveProperty("placeName")
   })
 
   it("starts the timer exactly once using the server arrival timestamp", () => {
