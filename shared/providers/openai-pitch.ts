@@ -40,12 +40,12 @@ const schema = {
     anywhere: {
       type: "boolean",
       description:
-        "True when the challenge can be done anywhere and names no kind of place to go (e.g. \"walk backwards while trick or treating\", \"do 20 pushups\"). False when it needs a business, attraction, park, or kind of place (e.g. \"eat at Taco Bell\", \"find a pumpkin patch\").",
+        "True unless the viewer explicitly names a destination or asks for a kind of destination. Movement words such as go, walk, run, explore, or trick-or-treat do not imply a destination by themselves. For example, \"go and trick or treat while walking backwards\" is anywhere=true, while \"go to Pike Place Market and trick or treat\" is anywhere=false.",
     },
     placeQuery: {
       type: "string",
       description:
-        "A concise search query for a real public business, attraction, park, or activity explicitly requested by the viewer. Empty string when anywhere is true.",
+        "A concise search query for the real public business, attraction, park, neighborhood, district, or city explicitly requested by the viewer. Never infer a neighborhood, business, or destination that was not requested. Empty string when anywhere is true.",
     },
     challenge: {
       type: "string",
@@ -60,7 +60,7 @@ const schema = {
     failConsequence: {
       type: "string",
       description:
-        "The penalty the viewer said the streamer must do if they fail (e.g. \"Eat a lemon\"), restated in at most 80 characters. Empty string if the viewer named none. Never invent one.",
+        "The viewer-provided penalty for failing, restated in at most 80 characters. Preserve it even when it needs a risk flag so the owner can decide. If none was provided, generate a harmless, playful consequence appropriate to the challenge. Never invent an illegal, dangerous, harassing, humiliating, destructive, or costly consequence.",
     },
     riskFlags: {
       type: "array",
@@ -129,7 +129,7 @@ export function createOpenAIPitchExtractor(
               store: false,
               max_output_tokens: 600,
               instructions:
-                "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. Flag dangerous, illegal, harassing, coercive, or otherwise concerning activity for human review. The public label is a poll choice of at most 25 characters that plainly restates the viewer's request, such as \"Eat the spiciest wings\" or \"Sing karaoke at a bar\". Do not make it vague or mysterious. Big chain names like Spirit Halloween are fine because they don't reveal which location; leave out local one-off business names, addresses, and neighborhoods.",
+                "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. A verb like go, walk, run, explore, or trick-or-treat is not a destination: set anywhere=true unless the viewer explicitly names a place or requests a kind of place. Named public businesses, attractions, markets, parks, neighborhoods, districts, and cities are valid destinations. Flag dangerous, illegal, harassing, coercive, or otherwise concerning activity for human review, including any requested failure consequence. Preserve a viewer-provided consequence and flag it when concerning so the owner can decide. If none was provided, generate a short, harmless, playful consequence; never generate one that is costly, destructive, humiliating, dangerous, illegal, or harassing. The public label is a poll choice of at most 25 characters that plainly restates the viewer's request. Do not make it vague or mysterious. Big chain names are fine because they don't reveal which location; leave out exact addresses and local destination names before arrival.",
               input: text,
               text: {
                 format: {

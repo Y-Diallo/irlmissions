@@ -65,6 +65,7 @@ describe("pitch review transitions", () => {
         action: "edit_details",
         publicLabel: "Mystery speed challenge",
         durationMinutes: 12,
+        failConsequence: "Sing a silly song",
       },
       now
     )
@@ -72,8 +73,47 @@ describe("pitch review transitions", () => {
       reviewStatus: "pending_review",
       publicLabel: "Mystery speed challenge",
       durationMinutes: 12,
+      extraction: expect.objectContaining({
+        failConsequence: "Sing a silly song",
+      }),
     })
     expect(update.deleteFields).toContain("approvedAt")
+  })
+
+  it("lets the owner replace or clear the generated fail consequence", () => {
+    const source = record({
+      extraction: {
+        ...record().extraction!,
+        failConsequence: "Do ten jumping jacks",
+      },
+    })
+    expect(
+      transitionPitchReview(
+        source,
+        {
+          action: "edit_details",
+          publicLabel: "Ten-item challenge",
+          durationMinutes: 10,
+          failConsequence: "Sing a silly song",
+        },
+        now
+      ).values
+    ).toMatchObject({
+      extraction: { failConsequence: "Sing a silly song" },
+      reviewStatus: "pending_review",
+    })
+    expect(
+      transitionPitchReview(
+        source,
+        {
+          action: "edit_details",
+          publicLabel: "Ten-item challenge",
+          durationMinutes: 10,
+          failConsequence: "",
+        },
+        now
+      ).values
+    ).toMatchObject({ extraction: { failConsequence: "" } })
   })
 
   it("approves flagged pitches only through an explicit human command", () => {
@@ -302,11 +342,13 @@ describe("pitch review transitions", () => {
         action: "edit_details",
         publicLabel: " Mystery objective ",
         durationMinutes: 10,
+        failConsequence: "  Wear a funny hat  ",
       })
     ).toEqual({
       action: "edit_details",
       publicLabel: "Mystery objective",
       durationMinutes: 10,
+      failConsequence: "Wear a funny hat",
     })
     const item = toPitchReviewItem(
       record({ processingWarnings: ["stale_location"] })

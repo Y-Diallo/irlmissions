@@ -22,15 +22,16 @@ const PLACE_FIELDS = [
   "places.attributions",
 ].join(",")
 
+// Named cities and neighborhoods are useful arrival anchors for exploration
+// streams. Reject only results that are too broad or resolve to an explicit
+// address/road rather than a public destination.
 const NON_DESTINATION_TYPES = new Set([
   "administrative_area_level_1",
   "administrative_area_level_2",
   "country",
-  "locality",
   "postal_code",
   "route",
   "street_address",
-  "sublocality",
 ])
 
 export function readGoogleMapsConfig(

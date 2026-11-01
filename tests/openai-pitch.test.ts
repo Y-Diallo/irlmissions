@@ -54,6 +54,12 @@ describe("OpenAI pitch extractor", () => {
         },
       },
     })
+    expect(request.instructions).toContain(
+      "set anywhere=true unless the viewer explicitly names a place"
+    )
+    expect(request.instructions).toContain(
+      "If none was provided, generate a short, harmless, playful consequence"
+    )
     expect(request.tools).toBeUndefined()
   })
 

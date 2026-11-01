@@ -140,7 +140,7 @@ describe("Google Maps providers", () => {
     })
   })
 
-  it("marks geographic results and service-area businesses ineligible", async () => {
+  it("allows localities but rejects service-area businesses", async () => {
     const place = {
       id: "place-1",
       displayName: { text: "Result" },
@@ -159,6 +159,7 @@ describe("Google Maps providers", () => {
             primaryType: "plumber",
             pureServiceAreaBusiness: true,
           },
+          { ...place, id: "place-3", primaryType: "street_address" },
         ],
       })
     )
@@ -170,7 +171,11 @@ describe("Google Maps providers", () => {
       origin: { latitude: 1, longitude: 2 },
       radiusMeters: 1000,
     })
-    expect(results.map((result) => result.publicAccess)).toEqual([false, false])
+    expect(results.map((result) => result.publicAccess)).toEqual([
+      true,
+      false,
+      false,
+    ])
   })
 
   it("requests the selected route mode without an invalid routing preference", async () => {

@@ -19,7 +19,10 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { PitchReviewItem, ReviewCommand } from "@/shared/pitches/review"
 import type { TravelMode } from "@/shared/pitches/processor"
-import type { PollRecord } from "@/shared/polls"
+import {
+  DEFAULT_POLL_DURATION_SECONDS,
+  type PollRecord,
+} from "@/shared/polls"
 import type { MissionAction, MissionOwnerView } from "@/shared/missions"
 
 const errors: Record<string, string> = {
@@ -121,14 +124,45 @@ function PitchCard({
   const [rawText, setRawText] = useState(pitch.rawText)
   const [publicLabel, setPublicLabel] = useState(pitch.publicLabel)
   const [duration, setDuration] = useState(String(pitch.durationMinutes))
+  const [failConsequence, setFailConsequence] = useState(
+    pitch.failConsequence ?? ""
+  )
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
+  const serverRawText = useRef(pitch.rawText)
+  const serverPublicLabel = useRef(pitch.publicLabel)
+  const serverDuration = useRef(String(pitch.durationMinutes))
+  const serverFailConsequence = useRef(pitch.failConsequence ?? "")
 
   useEffect(() => {
-    setRawText(pitch.rawText)
-    setPublicLabel(pitch.publicLabel)
-    setDuration(String(pitch.durationMinutes))
-  }, [pitch])
+    setRawText((current) =>
+      current === serverRawText.current ? pitch.rawText : current
+    )
+    serverRawText.current = pitch.rawText
+  }, [pitch.rawText])
+
+  useEffect(() => {
+    setPublicLabel((current) =>
+      current === serverPublicLabel.current ? pitch.publicLabel : current
+    )
+    serverPublicLabel.current = pitch.publicLabel
+  }, [pitch.publicLabel])
+
+  useEffect(() => {
+    const next = String(pitch.durationMinutes)
+    setDuration((current) =>
+      current === serverDuration.current ? next : current
+    )
+    serverDuration.current = next
+  }, [pitch.durationMinutes])
+
+  useEffect(() => {
+    const next = pitch.failConsequence ?? ""
+    setFailConsequence((current) =>
+      current === serverFailConsequence.current ? next : current
+    )
+    serverFailConsequence.current = next
+  }, [pitch.failConsequence])
 
   async function act(action: () => Promise<void>) {
     setBusy(true)
@@ -147,6 +181,7 @@ function PitchCard({
     action: "edit_details",
     publicLabel,
     durationMinutes: Number(duration),
+    failConsequence,
   })
   const reviewed =
     pitch.reviewStatus === "pending_review" || pitch.reviewStatus === "approved"
@@ -238,12 +273,6 @@ function PitchCard({
               Save pitch and reprocess
             </Button>
           )}
-          {pitch.failConsequence && (
-            <p className="text-sm">
-              <span className="font-medium">If failed (shown on stream):</span>{" "}
-              {pitch.failConsequence}
-            </p>
-          )}
         </div>
 
         {(reviewed || pitch.revivable) && (
@@ -330,37 +359,6 @@ function PitchCard({
                 </p>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
-                <div className="grid gap-2">
-                  <Label htmlFor={`label-${pitch.redemptionId}`}>
-                    Public poll label (no address or local business names)
-                  </Label>
-                  <Textarea
-                    id={`label-${pitch.redemptionId}`}
-                    value={publicLabel}
-                    maxLength={25}
-                    disabled={busy || pitch.locked}
-                    className="min-h-20 text-base"
-                    onChange={(event) => setPublicLabel(event.target.value)}
-                  />
-                </div>
-                <div className="grid content-start gap-2">
-                  <Label htmlFor={`duration-${pitch.redemptionId}`}>
-                    Minutes
-                  </Label>
-                  <Input
-                    id={`duration-${pitch.redemptionId}`}
-                    type="number"
-                    min={1}
-                    max={120}
-                    value={duration}
-                    disabled={busy || pitch.locked}
-                    className="min-h-12 text-base"
-                    onChange={(event) => setDuration(event.target.value)}
-                  />
-                </div>
-              </div>
-
               {pitch.duplicateSuggestions.length > 0 && (
                 <Alert>
                   <AlertTitle>Possible duplicate</AlertTitle>
@@ -373,6 +371,56 @@ function PitchCard({
               )}
             </>
           )}
+
+        {reviewed && (
+          <div className="grid gap-4">
+            <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
+              <div className="grid gap-2">
+                <Label htmlFor={`label-${pitch.redemptionId}`}>
+                  Public poll label (no exact destination or street address)
+                </Label>
+                <Textarea
+                  id={`label-${pitch.redemptionId}`}
+                  value={publicLabel}
+                  maxLength={25}
+                  disabled={busy || pitch.locked}
+                  className="min-h-20 text-base"
+                  onChange={(event) => setPublicLabel(event.target.value)}
+                />
+              </div>
+              <div className="grid content-start gap-2">
+                <Label htmlFor={`duration-${pitch.redemptionId}`}>Minutes</Label>
+                <Input
+                  id={`duration-${pitch.redemptionId}`}
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={duration}
+                  disabled={busy || pitch.locked}
+                  className="min-h-12 text-base"
+                  onChange={(event) => setDuration(event.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor={`consequence-${pitch.redemptionId}`}>
+                If failed (shown on stream)
+              </Label>
+              <Textarea
+                id={`consequence-${pitch.redemptionId}`}
+                value={failConsequence}
+                maxLength={80}
+                disabled={busy || pitch.locked}
+                placeholder="A safe, playful consequence"
+                className="min-h-20 text-base"
+                onChange={(event) => setFailConsequence(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                You can replace the generated consequence or leave it blank.
+              </p>
+            </div>
+          </div>
+        )}
 
         {pitch.reviewStatus === "rejected" && (
           <p className="text-sm text-muted-foreground">
@@ -478,6 +526,9 @@ export function PitchQueue() {
   const [pollBusy, setPollBusy] = useState(false)
   const [pollMessage, setPollMessage] = useState("")
   const [noTravelMode, setNoTravelMode] = useState(false)
+  const [pollDurationSeconds, setPollDurationSeconds] = useState(
+    DEFAULT_POLL_DURATION_SECONDS
+  )
   const [modeBusy, setModeBusy] = useState(false)
 
   async function toggleNoTravelMode(enabled: boolean) {
@@ -557,6 +608,13 @@ export function PitchQueue() {
       }
       setPitches(nextPitches)
       setNoTravelMode(pitchBody.noTravelMode === true)
+      setPollDurationSeconds(
+        Number.isInteger(pitchBody.pollDurationSeconds) &&
+          pitchBody.pollDurationSeconds >= 15 &&
+          pitchBody.pollDurationSeconds <= 1800
+          ? pitchBody.pollDurationSeconds
+          : DEFAULT_POLL_DURATION_SECONDS
+      )
       setPoll(pollBody.poll)
       setMission(missionBody.mission)
       setSelected((current) => {
@@ -908,11 +966,11 @@ export function PitchQueue() {
                 onClick={() =>
                   void pollAction("/api/polls", {
                     redemptionIds: [...selected],
-                    durationSeconds: 60,
+                    durationSeconds: pollDurationSeconds,
                   })
                 }
               >
-                Start 60-second Twitch poll
+                Start {pollDurationSeconds}-second Twitch poll
               </Button>
             )}
           </CardFooter>

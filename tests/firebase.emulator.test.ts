@@ -444,6 +444,7 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
           action: "edit_details",
           publicLabel: "Edited mystery objective",
           durationMinutes: 12,
+          failConsequence: "Do a silly dance",
         },
         3000
       )

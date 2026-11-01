@@ -6,6 +6,7 @@ import type {
   RiskFlag,
   WalkingRoute,
 } from "@/shared/pitches/processor"
+import { MAX_FAIL_CONSEQUENCE_LENGTH } from "@/shared/pitches/processor"
 import { MAX_POLL_CHOICE_LENGTH, withoutDashes } from "@/shared/polls"
 import type { RedemptionResolution } from "@/shared/redemptions"
 
@@ -83,7 +84,12 @@ export type PitchReviewItem = {
 
 export type ReviewCommand =
   | { action: "edit_raw"; rawText: string }
-  | { action: "edit_details"; publicLabel: string; durationMinutes: number }
+  | {
+      action: "edit_details"
+      publicLabel: string
+      durationMinutes: number
+      failConsequence: string
+    }
   | { action: "set_no_travel"; noTravel: boolean }
   | { action: "approve" }
   | { action: "reject" }
@@ -108,6 +114,17 @@ function cleanText(value: unknown, field: string, max: number) {
     throw new PitchReviewError(`invalid_${field}`, 400)
   const text = value.trim()
   if (!text || text.length > max) {
+    throw new PitchReviewError(`invalid_${field}`, 400)
+  }
+  return text
+}
+
+function cleanOptionalText(value: unknown, field: string, max: number) {
+  if (typeof value !== "string") {
+    throw new PitchReviewError(`invalid_${field}`, 400)
+  }
+  const text = withoutDashes(value).replace(/\s+/g, " ").trim()
+  if (text.length > max) {
     throw new PitchReviewError(`invalid_${field}`, 400)
   }
   return text
@@ -143,6 +160,11 @@ export function parseReviewCommand(value: unknown): ReviewCommand {
           MAX_POLL_CHOICE_LENGTH
         ),
         durationMinutes: durationMinutes as number,
+        failConsequence: cleanOptionalText(
+          input.failConsequence,
+          "fail_consequence",
+          MAX_FAIL_CONSEQUENCE_LENGTH
+        ),
       }
     }
     case "set_no_travel":
@@ -318,6 +340,10 @@ export function transitionPitchReview(
       values: {
         publicLabel: command.publicLabel,
         durationMinutes: command.durationMinutes,
+        extraction: {
+          ...record.extraction!,
+          failConsequence: command.failConsequence,
+        },
         reviewStatus: "pending_review",
         updatedAt: now,
       },
