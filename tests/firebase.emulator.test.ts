@@ -317,6 +317,7 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
             walkingRoute: { distanceMeters: 500, durationSeconds: 400 },
             duplicateSuggestions: [],
             straightLineMeters: 450,
+            warnings: [],
           },
           3000
         )
