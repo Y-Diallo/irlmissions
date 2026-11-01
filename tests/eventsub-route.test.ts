@@ -11,11 +11,23 @@ const mocks = vi.hoisted(() => ({
       })),
     },
   })),
-  save: vi.fn(async () => "created" as const),
+  save: vi.fn(
+    async (): Promise<
+      "created" | "duplicate-redemption" | "duplicate-message"
+    > => "created"
+  ),
   createEventSubStore: vi.fn(),
   applyPollEnd: vi.fn(async () => "winner" as const),
+  after: vi.fn(),
+  afterCallbacks: [] as Array<() => Promise<void> | void>,
+  runPitchNow: vi.fn(async () => ({ kind: "ready_for_review" as const })),
 }))
 mocks.createEventSubStore.mockImplementation(() => ({ save: mocks.save }))
+mocks.after.mockImplementation((callback) => {
+  mocks.afterCallbacks.push(callback)
+})
+
+vi.mock("next/server", () => ({ after: mocks.after }))
 
 vi.mock("@/lib/firebase/admin", () => ({
   getServerFirebase: mocks.getServerFirebase,
@@ -25,6 +37,9 @@ vi.mock("@/lib/eventsub/store", () => ({
 }))
 vi.mock("@/lib/polls/end-store", () => ({
   createPollEndStore: () => ({ apply: mocks.applyPollEnd }),
+}))
+vi.mock("@/lib/pitches/runner", () => ({
+  runPitchNow: mocks.runPitchNow,
 }))
 
 import { POST } from "@/app/api/eventsub/route"
@@ -104,6 +119,9 @@ afterEach(() => {
   mocks.getServerFirebase.mockClear()
   mocks.createEventSubStore.mockClear()
   mocks.save.mockReset().mockResolvedValue("created")
+  mocks.after.mockClear()
+  mocks.afterCallbacks.length = 0
+  mocks.runPitchNow.mockClear()
   vi.useRealTimers()
 })
 
@@ -139,6 +157,21 @@ describe("EventSub route", () => {
     expect(mocks.save).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "redemption" })
     )
+    expect(mocks.after).toHaveBeenCalledOnce()
+    expect(mocks.runPitchNow).not.toHaveBeenCalled()
+    await mocks.afterCallbacks[0]!()
+    expect(mocks.runPitchNow).toHaveBeenCalledWith("42", "redemption-1")
+  })
+
+  it("safely reschedules a duplicate redemption", async () => {
+    setLiveEnv()
+    vi.setSystemTime(clock)
+    mocks.save.mockResolvedValueOnce("duplicate-redemption")
+    const response = await POST(request(payload()))
+    expect(response.status).toBe(204)
+    expect(mocks.after).toHaveBeenCalledOnce()
+    await mocks.afterCallbacks[0]!()
+    expect(mocks.runPitchNow).toHaveBeenCalledWith("42", "redemption-1")
   })
 
   it("durably saves poll completion through the same thin webhook", async () => {

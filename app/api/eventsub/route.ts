@@ -1,3 +1,4 @@
+import { after } from "next/server"
 import { getServerFirebase } from "@/lib/firebase/admin"
 import { createEventSubStore } from "@/lib/eventsub/store"
 import { createPollEndStore } from "@/lib/polls/end-store"
@@ -11,6 +12,22 @@ import {
 } from "@/shared/eventsub"
 
 export const runtime = "nodejs"
+export const maxDuration = 60
+
+function logBackgroundFailure(
+  event: string,
+  error: unknown,
+  fields: Record<string, string>
+) {
+  console.error(
+    JSON.stringify({
+      severity: "ERROR",
+      event,
+      message: error instanceof Error ? error.message : "Unknown error",
+      ...fields,
+    })
+  )
+}
 
 function headers(request: Request): EventSubHeaders {
   return {
@@ -40,9 +57,9 @@ export async function POST(request: Request) {
       input
     )
     const integration = (
-      await getServerFirebase().db.doc(
-        `owners/${broadcasterId}/private/integrations`
-      ).get()
+      await getServerFirebase()
+        .db.doc(`owners/${broadcasterId}/private/integrations`)
+        .get()
     ).data()
     const rewardId = integration?.rewardId
     const config = readEventSubConfig(
@@ -50,30 +67,51 @@ export async function POST(request: Request) {
       broadcasterId,
       typeof rewardId === "string" ? rewardId : ""
     )
-    const result = await acceptEventSub(
-      config,
-      input,
-      {
-        store: {
-          async save(write) {
-            const db = getServerFirebase().db
-            const result = await createEventSubStore(db, broadcasterId).save(
-              write
+    const result = await acceptEventSub(config, input, {
+      store: {
+        async save(write) {
+          const db = getServerFirebase().db
+          const result = await createEventSubStore(db, broadcasterId).save(
+            write
+          )
+          if (
+            write.kind === "redemption" &&
+            ["created", "duplicate-redemption", "duplicate-message"].includes(
+              result
             )
-            if (write.kind === "poll_end" && result === "created") {
-              // Apply the result now instead of waiting for the scheduled
-              // processor. It is Firestore-only; on failure the event stays
-              // pending for the processor or the owner's End poll resync.
-              await createPollEndStore(db, broadcasterId)
-                .apply(write.poll.pollId, Date.now())
-                .catch(() => null)
-            }
-            return result
-          },
+          ) {
+            const redemptionId = write.pitch.redemptionId
+            after(async () => {
+              try {
+                const { runPitchNow } = await import("@/lib/pitches/runner")
+                await runPitchNow(broadcasterId, redemptionId)
+              } catch (error) {
+                // The pitch remains durable and its error/pending state stays
+                // available for the delayed manual retry in the console.
+                logBackgroundFailure(
+                  "eventsub_pitch_processing_failed",
+                  error,
+                  {
+                    tenantId: broadcasterId,
+                    redemptionId,
+                  }
+                )
+              }
+            })
+          }
+          if (write.kind === "poll_end" && result === "created") {
+            // Apply the result now instead of waiting for the scheduled
+            // processor. It is Firestore-only; on failure the event stays
+            // pending for the processor or the owner's End poll resync.
+            await createPollEndStore(db, broadcasterId)
+              .apply(write.poll.pollId, Date.now())
+              .catch(() => null)
+          }
+          return result
         },
-        now: Date.now,
-      }
-    )
+      },
+      now: Date.now,
+    })
     if (result.kind === "challenge") {
       return response(result.challenge, {
         status: 200,

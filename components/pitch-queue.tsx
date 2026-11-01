@@ -134,6 +134,7 @@ function PitchCard({
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const [processingDelayed, setProcessingDelayed] = useState(false)
   const serverRawText = useRef(pitch.rawText)
   const serverPublicLabel = useRef(pitch.publicLabel)
   const serverDuration = useRef(String(pitch.durationMinutes))
@@ -166,6 +167,20 @@ function PitchCard({
     serverFailConsequence.current = next
     setFailConsequence((current) => (current === previous ? next : current))
   }, [pitch.failConsequence])
+
+  useEffect(() => {
+    if (
+      pitch.reviewStatus !== "processing" ||
+      pitch.processing?.status === "error"
+    ) {
+      return
+    }
+    const timeout = setTimeout(
+      () => setProcessingDelayed(true),
+      Math.max(0, pitch.createdAt + 30_000 - Date.now())
+    )
+    return () => clearTimeout(timeout)
+  }, [pitch.createdAt, pitch.processing?.status, pitch.reviewStatus])
 
   async function act(action: () => Promise<void>) {
     setBusy(true)
@@ -501,22 +516,25 @@ function PitchCard({
       </CardContent>
 
       <CardFooter className="grid grid-cols-1 gap-3 md:flex md:flex-row md:flex-wrap">
-        {processing && (
-          <Button
-            className="min-h-14 w-full text-base md:w-auto"
-            disabled={busy || pitch.locked}
-            onClick={() =>
-              void act(async () => {
-                if (pitch.processing?.status === "error") {
-                  await mutate(pitch, { action: "retry" })
-                }
-                await processNow(pitch)
-              })
-            }
-          >
-            {pitch.processing?.status === "error" ? "Retry now" : "Process now"}
-          </Button>
-        )}
+        {processing &&
+          (pitch.processing?.status === "error" || processingDelayed) && (
+            <Button
+              className="min-h-14 w-full text-base md:w-auto"
+              disabled={busy || pitch.locked}
+              onClick={() =>
+                void act(async () => {
+                  if (pitch.processing?.status === "error") {
+                    await mutate(pitch, { action: "retry" })
+                  }
+                  await processNow(pitch)
+                })
+              }
+            >
+              {pitch.processing?.status === "error"
+                ? "Retry processing"
+                : "Processing delayed — run now"}
+            </Button>
+          )}
         {reviewed && (
           <>
             {pitch.reviewStatus === "approved" && (
