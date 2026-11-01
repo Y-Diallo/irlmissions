@@ -227,6 +227,39 @@ describe("pitch processor", () => {
     })
   })
 
+  it("prefers an established place when it is still reasonably nearby", async () => {
+    const state = fixture()
+    const place = {
+      address: "Nearby",
+      longitude: -122.4194,
+      publicAccess: true,
+      businessStatus: "operational" as const,
+      hoursText: null,
+      googleMapsUri: "https://maps.google.com/",
+      attributions: [],
+    }
+    state.deps.places.search = vi.fn(async () => [
+      {
+        ...place,
+        placeId: "unknown-gym",
+        name: "Unnamed Gym",
+        latitude: 37.7776,
+        userRatingCount: 2,
+      },
+      {
+        ...place,
+        placeId: "established-gym",
+        name: "Established Fitness",
+        latitude: 37.7821,
+        userRatingCount: 1200,
+      },
+    ])
+    await processPitch("redemption-1", state.deps)
+    expect(state.completed).toMatchObject({
+      destination: { placeId: "established-gym" },
+    })
+  })
+
   it("warns but continues when a legacy location observation is stale", async () => {
     const state = fixture()
     state.context.origin.observedAt = now - 2 * 60_000 - 1

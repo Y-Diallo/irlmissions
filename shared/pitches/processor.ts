@@ -63,6 +63,7 @@ export type PlaceCandidate = Coordinates & {
   businessStatus:
     "operational" | "closed_temporarily" | "closed_permanently" | "unknown"
   hoursText: string[] | null
+  userRatingCount?: number
   googleMapsUri: string
   attributions: { provider: string; providerUri: string }[]
 }
@@ -326,7 +327,18 @@ function eligiblePlaces(
         fromOrigin <= context.searchRadiusMeters &&
         fromBase > context.baseZone.radiusMeters
     )
-    .sort((a, b) => a.fromOrigin - b.fromOrigin)
+    .sort((a, b) => {
+      // Prefer established, widely reviewed places when they are reasonably
+      // nearby, but cap the advantage so popularity cannot pull the streamer
+      // across the entire search radius. Roughly, a highly reviewed chain can
+      // beat an unknown result only when it is within about 1 km farther away.
+      const score = (value: typeof a) => {
+        const reviews = Math.max(0, value.candidate.userRatingCount ?? 0)
+        const popularityBoost = Math.min(Math.log10(reviews + 1) * 300, 1_000)
+        return value.fromOrigin - popularityBoost
+      }
+      return score(a) - score(b) || a.fromOrigin - b.fromOrigin
+    })
 }
 
 function validateRoute(route: WalkingRoute) {

@@ -299,6 +299,7 @@ function SetupNumber({
     <div className="space-y-2">
       <Label htmlFor={name}>{label}</Label>
       <Input
+        key={`${name}-${String(value)}`}
         id={name}
         name={name}
         type="number"

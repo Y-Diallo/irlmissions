@@ -18,6 +18,7 @@ describe("Google Maps providers", () => {
             location: { latitude: 37.775, longitude: -122.418 },
             businessStatus: "OPERATIONAL",
             primaryType: "cafe",
+            userRatingCount: 842,
             pureServiceAreaBusiness: false,
             currentOpeningHours: {
               weekdayDescriptions: ["Monday: 8:00 AM–8:00 PM"],
@@ -52,6 +53,7 @@ describe("Google Maps providers", () => {
         publicAccess: true,
         businessStatus: "operational",
         hoursText: ["Monday: 8:00 AM–8:00 PM"],
+        userRatingCount: 842,
         attributions: [
           { provider: "Demo Data", providerUri: "https://data.example" },
         ],

@@ -16,6 +16,7 @@ const PLACE_FIELDS = [
   "places.location",
   "places.businessStatus",
   "places.currentOpeningHours.weekdayDescriptions",
+  "places.userRatingCount",
   "places.primaryType",
   "places.pureServiceAreaBusiness",
   "places.googleMapsUri",
@@ -158,6 +159,7 @@ function parsePlace(value: unknown): PlaceCandidate | null {
     ? descriptions.filter((item): item is string => typeof item === "string")
     : null
   const primaryType = string(place?.primaryType)
+  const userRatingCount = place?.userRatingCount
   return {
     placeId,
     name,
@@ -169,6 +171,10 @@ function parsePlace(value: unknown): PlaceCandidate | null {
       (!primaryType || !NON_DESTINATION_TYPES.has(primaryType)),
     businessStatus: businessStatus(place?.businessStatus),
     hoursText: hoursText?.length ? hoursText : null,
+    ...(Number.isSafeInteger(userRatingCount) &&
+    (userRatingCount as number) >= 0
+      ? { userRatingCount: userRatingCount as number }
+      : {}),
     googleMapsUri,
     attributions: parseAttributions(place?.attributions),
   }
