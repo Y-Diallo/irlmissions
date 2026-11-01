@@ -135,33 +135,33 @@ function PitchCard({
   const serverFailConsequence = useRef(pitch.failConsequence ?? "")
 
   useEffect(() => {
-    setRawText((current) =>
-      current === serverRawText.current ? pitch.rawText : current
-    )
+    const previous = serverRawText.current
     serverRawText.current = pitch.rawText
+    setRawText((current) =>
+      current === previous ? pitch.rawText : current
+    )
   }, [pitch.rawText])
 
   useEffect(() => {
-    setPublicLabel((current) =>
-      current === serverPublicLabel.current ? pitch.publicLabel : current
-    )
+    const previous = serverPublicLabel.current
     serverPublicLabel.current = pitch.publicLabel
+    setPublicLabel((current) =>
+      current === previous ? pitch.publicLabel : current
+    )
   }, [pitch.publicLabel])
 
   useEffect(() => {
     const next = String(pitch.durationMinutes)
-    setDuration((current) =>
-      current === serverDuration.current ? next : current
-    )
+    const previous = serverDuration.current
     serverDuration.current = next
+    setDuration((current) => (current === previous ? next : current))
   }, [pitch.durationMinutes])
 
   useEffect(() => {
     const next = pitch.failConsequence ?? ""
-    setFailConsequence((current) =>
-      current === serverFailConsequence.current ? next : current
-    )
+    const previous = serverFailConsequence.current
     serverFailConsequence.current = next
+    setFailConsequence((current) => (current === previous ? next : current))
   }, [pitch.failConsequence])
 
   async function act(action: () => Promise<void>) {
@@ -187,6 +187,29 @@ function PitchCard({
     pitch.reviewStatus === "pending_review" || pitch.reviewStatus === "approved"
   const rawEditable = reviewed || pitch.revivable
   const processing = pitch.reviewStatus === "processing"
+  const terminal =
+    pitch.reviewStatus === "completed" || pitch.reviewStatus === "failed"
+
+  if (terminal) {
+    const summary =
+      pitch.publicLabel || pitch.challenge || pitch.rawText || "Mission"
+    return (
+      <Card size="sm" className="gap-0 border-border/70 py-3 shadow-none">
+        <CardHeader className="gap-0 px-4 [grid-template-columns:minmax(0,1fr)_auto]">
+          <CardTitle className="truncate pr-2 text-base">{summary}</CardTitle>
+          <CardDescription className="truncate text-xs">
+            {pitch.viewerName}
+            {pitch.reviewStatus === "failed" && pitch.failConsequence
+              ? ` · Consequence: ${pitch.failConsequence}`
+              : ""}
+          </CardDescription>
+          <CardAction>
+            <StatusBadge pitch={pitch} />
+          </CardAction>
+        </CardHeader>
+      </Card>
+    )
+  }
 
   return (
     <Card className="border-border/80">

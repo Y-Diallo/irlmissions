@@ -56,7 +56,7 @@ const schema = {
       minLength: 1,
       maxLength: 25,
       description:
-        "A complete Twitch poll choice of at most 25 characters. Remove filler such as go to, challenge a stranger, and conjunctions; keep the destination category or safe chain name plus the core activity. Example: \"Taco Bell tic-tac-toe\". Never end with a dangling word such as and, at, to, or with. Omit exact addresses and local destination names.",
+        "A complete, success-oriented Twitch objective of at most 25 characters. Remove filler such as go to, challenge a stranger, and conjunctions; keep the destination category or safe chain name plus the core activity. Use an action that describes success: when losing triggers the consequence, use Win rather than Play. Example: \"Win Tic-Tac-Toe at a Gym\". Never end with a dangling word such as and, at, to, or with. Omit exact addresses and local destination names.",
     },
     durationMinutes: { type: "integer", minimum: 1, maximum: 120 },
     failConsequence: {
@@ -114,7 +114,19 @@ function statedFailConsequence(input: string) {
     /\bif\s+(?:you|i|the streamer)\s+(?:fail|fails|failed|lose|loses|lost)\b\s*[:,]?\s*(.+)$/i.exec(
       input
     )
-  return match?.[1]?.trim() ?? ""
+  const consequence = match?.[1]?.trim() ?? ""
+  if (!consequence) return ""
+  const sentence = `${consequence[0]!.toUpperCase()}${consequence.slice(1)}`
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`
+}
+
+function successOrientedLabel(label: string, input: string) {
+  if (/\bif\s+(?:you|i|the streamer)\s+(?:lose|loses|lost)\b/i.test(input)) {
+    return label.replace(/^play\b/i, (word) =>
+      word[0] === word[0]?.toUpperCase() ? "Win" : "win"
+    )
+  }
+  return label
 }
 
 export function createOpenAIPitchExtractor(
@@ -159,6 +171,10 @@ export function createOpenAIPitchExtractor(
         ) as PitchExtraction
         return validateExtraction({
           ...parsed,
+          publicLabelSuggestion: successOrientedLabel(
+            parsed.publicLabelSuggestion,
+            text
+          ),
           failConsequence:
             parsed.failConsequence?.trim() || statedFailConsequence(text),
         })

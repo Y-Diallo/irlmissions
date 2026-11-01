@@ -104,7 +104,7 @@ describe("OpenAI pitch extractor", () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       response({
         ...extraction,
-        publicLabelSuggestion: "Taco Bell tic-tac-toe",
+        publicLabelSuggestion: "Play Tic-Tac-Toe at a Gym",
         failConsequence: "",
       })
     )
@@ -113,11 +113,11 @@ describe("OpenAI pitch extractor", () => {
         { apiKey: "secret", model: "gpt-6-luna" },
         fetchMock
       ).extract(
-        "Go to Taco Bell and play tic-tac-toe; if you lose no swearing for 10 minutes"
+        "Go to a gym and challenge a stranger to tic-tac-toe; if you lose no swearing for 10 minutes"
       )
     ).resolves.toMatchObject({
-      publicLabelSuggestion: "Taco Bell tic-tac-toe",
-      failConsequence: "no swearing for 10 minutes",
+      publicLabelSuggestion: "Win Tic-Tac-Toe at a Gym",
+      failConsequence: "No swearing for 10 minutes.",
     })
   })
 
