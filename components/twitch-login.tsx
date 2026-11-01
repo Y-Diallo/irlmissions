@@ -13,7 +13,7 @@ const LOGIN_ERRORS: Record<string, string> = {
   expired: "Your connection expired. Please sign in again.",
 }
 
-export function TwitchLogin() {
+export function TwitchLogin({ compact = false }: { compact?: boolean }) {
   const [uid, setUid] = useState<string | null>(null)
   const [status, setStatus] = useState("Checking sign-in…")
   const [busy, setBusy] = useState(false)
@@ -121,10 +121,10 @@ export function TwitchLogin() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className={compact ? "flex flex-col items-end gap-2" : "space-y-4"}>
       {uid ? (
         <Button
-          className="min-h-12 px-5 text-base"
+          className={compact ? "min-h-11 px-4" : "min-h-12 px-5 text-base"}
           variant="outline"
           disabled={busy}
           onClick={() => {
@@ -135,15 +135,24 @@ export function TwitchLogin() {
         </Button>
       ) : (
         <Button
-          className="min-h-12 px-5 text-base"
+          className={compact ? "min-h-11 px-4" : "min-h-12 px-5 text-base"}
           onClick={() => window.location.assign("/api/auth/twitch/login")}
         >
           Sign in with Twitch
         </Button>
       )}
-      <p role="status" className="text-sm leading-relaxed">
-        {status}
-      </p>
+      {(!compact || !uid) && (
+        <p
+          role="status"
+          className={
+            compact
+              ? "max-w-64 text-right text-xs leading-relaxed text-muted-foreground"
+              : "text-sm leading-relaxed"
+          }
+        >
+          {status}
+        </p>
+      )}
     </div>
   )
 }

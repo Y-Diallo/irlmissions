@@ -1216,9 +1216,6 @@ export function PitchQueue() {
       )}
       <div className="order-0 grid grid-cols-[1fr_auto] items-center gap-4">
         <div>
-          <p className="text-sm font-medium text-muted-foreground">
-            Producer console
-          </p>
           <h2
             id="queue-heading"
             className="text-2xl font-semibold tracking-tight"
@@ -1268,7 +1265,7 @@ export function PitchQueue() {
         </label>
       )}
       {signedIn && (
-        <label className="order-4 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
+        <label className="order-0 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
           <input
             type="checkbox"
             className="size-6 shrink-0 accent-primary"
@@ -1287,7 +1284,7 @@ export function PitchQueue() {
         </label>
       )}
       {signedIn && (
-        <label className="order-4 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
+        <label className="order-0 flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border p-4 text-base">
           <input
             type="checkbox"
             className="size-6 shrink-0 accent-primary"
@@ -1315,7 +1312,7 @@ export function PitchQueue() {
         </div>
       )}
       {signedIn && (
-        <Card className="order-6 border-destructive/40">
+        <Card className="order-0 border-destructive/40">
           <CardHeader>
             <CardTitle className="text-lg">End stream</CardTitle>
             <CardDescription>

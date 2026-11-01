@@ -5,7 +5,7 @@ import { signInWithCustomToken, signOut } from "firebase/auth"
 import { Button } from "@/components/ui/button"
 import { getBrowserFirebase } from "@/lib/firebase/client"
 
-export function DemoLogin() {
+export function DemoLogin({ compact = false }: { compact?: boolean }) {
   const [status, setStatus] = useState("")
   const [busy, setBusy] = useState(false)
 
@@ -38,17 +38,17 @@ export function DemoLogin() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-3">
+    <div className={compact ? "flex flex-col items-end gap-2" : "space-y-4"}>
+      <div className="flex flex-wrap justify-end gap-2">
         <Button
-          className="min-h-12 px-5 text-base"
+          className={compact ? "min-h-11 px-3" : "min-h-12 px-5 text-base"}
           disabled={busy}
           onClick={login}
         >
           {busy ? "Connecting…" : "Try as demo owner"}
         </Button>
         <Button
-          className="min-h-12 px-5 text-base"
+          className={compact ? "min-h-11 px-3" : "min-h-12 px-5 text-base"}
           variant="outline"
           disabled={busy}
           onClick={logout}
@@ -56,7 +56,14 @@ export function DemoLogin() {
           Sign out
         </Button>
       </div>
-      <p role="status" className="text-sm leading-relaxed">
+      <p
+        role="status"
+        className={
+          compact
+            ? "max-w-64 text-right text-xs leading-relaxed text-muted-foreground"
+            : "text-sm leading-relaxed"
+        }
+      >
         {status}
       </p>
     </div>
