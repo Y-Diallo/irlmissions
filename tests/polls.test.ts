@@ -50,7 +50,7 @@ describe("poll state", () => {
   it("accepts only 2–5 unique pitches and Twitch's duration range", () => {
     expect(parseStartPollCommand({ redemptionIds: ["a", "b"] })).toEqual({
       redemptionIds: ["a", "b"],
-      durationSeconds: 60,
+      durationSeconds: 120,
     })
     expect(() =>
       parseStartPollCommand({ redemptionIds: ["a"], durationSeconds: 60 })

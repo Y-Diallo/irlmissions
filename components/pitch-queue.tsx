@@ -526,8 +526,8 @@ export function PitchQueue() {
   const [pollBusy, setPollBusy] = useState(false)
   const [pollMessage, setPollMessage] = useState("")
   const [noTravelMode, setNoTravelMode] = useState(false)
-  const [pollDurationSeconds, setPollDurationSeconds] = useState(
-    DEFAULT_POLL_DURATION_SECONDS
+  const [pollDuration, setPollDuration] = useState(
+    String(DEFAULT_POLL_DURATION_SECONDS)
   )
   const [modeBusy, setModeBusy] = useState(false)
 
@@ -608,13 +608,6 @@ export function PitchQueue() {
       }
       setPitches(nextPitches)
       setNoTravelMode(pitchBody.noTravelMode === true)
-      setPollDurationSeconds(
-        Number.isInteger(pitchBody.pollDurationSeconds) &&
-          pitchBody.pollDurationSeconds >= 15 &&
-          pitchBody.pollDurationSeconds <= 1800
-          ? pitchBody.pollDurationSeconds
-          : DEFAULT_POLL_DURATION_SECONDS
-      )
       setPoll(pollBody.poll)
       setMission(missionBody.mission)
       setSelected((current) => {
@@ -806,6 +799,11 @@ export function PitchQueue() {
     )
     return pitch ? [pitch] : []
   })
+  const pollDurationSeconds = Number(pollDuration)
+  const pollDurationValid =
+    Number.isInteger(pollDurationSeconds) &&
+    pollDurationSeconds >= 15 &&
+    pollDurationSeconds <= 1800
 
   return (
     <section aria-labelledby="queue-heading" className="space-y-4">
@@ -920,6 +918,26 @@ export function PitchQueue() {
                 No pitches selected yet.
               </p>
             )}
+            {!pollInProgress && (
+              <div className="grid max-w-52 gap-2">
+                <Label htmlFor="poll-duration">Poll length (seconds)</Label>
+                <Input
+                  id="poll-duration"
+                  type="number"
+                  min={15}
+                  max={1800}
+                  step={1}
+                  value={pollDuration}
+                  disabled={pollBusy || !!missionInProgress}
+                  aria-invalid={!pollDurationValid}
+                  className="min-h-12 text-base"
+                  onChange={(event) => setPollDuration(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  15–1800 seconds. Defaults to 120.
+                </p>
+              </div>
+            )}
             {poll?.status === "create_unknown" && (
               <Alert variant="destructive">
                 <AlertTitle>Poll creation needs reconciliation</AlertTitle>
@@ -961,7 +979,8 @@ export function PitchQueue() {
                   pollBusy ||
                   !!missionInProgress ||
                   selected.size < 2 ||
-                  selected.size > 5
+                  selected.size > 5 ||
+                  !pollDurationValid
                 }
                 onClick={() =>
                   void pollAction("/api/polls", {
@@ -970,7 +989,9 @@ export function PitchQueue() {
                   })
                 }
               >
-                Start {pollDurationSeconds}-second Twitch poll
+                {pollDurationValid
+                  ? `Start ${pollDurationSeconds}-second Twitch poll`
+                  : "Enter a valid poll length"}
               </Button>
             )}
           </CardFooter>

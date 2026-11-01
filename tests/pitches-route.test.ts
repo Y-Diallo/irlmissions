@@ -15,9 +15,7 @@ vi.mock("@/lib/firebase/admin", () => ({
   getServerFirebase: () => ({
     db: {
       doc: () => ({
-        get: async () => ({
-          data: () => ({ noTravelMode: true, pollDurationSeconds: 180 }),
-        }),
+        get: async () => ({ data: () => ({ noTravelMode: true }) }),
       }),
     },
   }),
@@ -54,7 +52,6 @@ describe("owner pitch routes", () => {
     await expect(response.json()).resolves.toEqual({
       pitches: [{ redemptionId: "redemption-1" }],
       noTravelMode: true,
-      pollDurationSeconds: 180,
     })
     expect(mocks.requireOwner).toHaveBeenCalledWith("Bearer owner-token")
     expect(mocks.list).toHaveBeenCalledOnce()

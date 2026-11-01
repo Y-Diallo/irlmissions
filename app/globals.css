@@ -459,8 +459,15 @@ body:has(.overlay-canvas),
 }
 
 .show-photo-credit {
-  margin-top: 0.75rem;
-  color: #d8d9ff;
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  max-width: calc(100% - 1rem);
+  margin: 0;
+  border: 2px solid var(--show-ink);
+  padding: 0.22rem 0.4rem;
+  color: #fff;
+  background: #111329;
   font-size: 0.62rem;
   font-weight: 700;
   text-shadow: 1px 1px 0 var(--show-ink);

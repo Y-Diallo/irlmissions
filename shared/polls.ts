@@ -1,5 +1,5 @@
 export const DEFAULT_POLL_TITLE = "What should we do next?"
-export const DEFAULT_POLL_DURATION_SECONDS = 60
+export const DEFAULT_POLL_DURATION_SECONDS = 120
 export const MIN_POLL_CHOICES = 2
 export const MAX_POLL_CHOICES = 5
 export const MAX_POLL_CHOICE_LENGTH = 25

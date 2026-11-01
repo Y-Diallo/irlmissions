@@ -107,11 +107,38 @@ function Card({
               : "Destination photo"
           }
           className="show-photo"
-          role="img"
+          role="group"
           style={{
             backgroundImage: `url(${JSON.stringify(photo.uri).slice(1, -1)})`,
           }}
-        />
+        >
+          {photo.attributions.length > 0 && (
+            <p className="show-photo-credit">
+              Photo: {" "}
+              {photo.attributions.map((attribution, index) => (
+                <span key={`${attribution.displayName}-${index}`}>
+                  {index > 0 ? ", " : ""}
+                  {attribution.photoUri && (
+                    <i
+                      aria-hidden="true"
+                      className="show-photo-author"
+                      style={{
+                        backgroundImage: `url(${JSON.stringify(attribution.photoUri).slice(1, -1)})`,
+                      }}
+                    />
+                  )}
+                  {attribution.uri ? (
+                    <a href={attribution.uri} rel="noreferrer">
+                      {attribution.displayName}
+                    </a>
+                  ) : (
+                    attribution.displayName
+                  )}
+                </span>
+              ))}
+            </p>
+          )}
+        </div>
       )}
       <div className="show-card-content">
         <div className="show-stage-row">
@@ -160,32 +187,6 @@ function Card({
               : "consequence" in overlay && overlay.consequence
                 ? `Consequence: ${overlay.consequence}`
                 : "Mission failed, geeg"}
-          </p>
-        )}
-        {photoVisible && photo.attributions.length > 0 && (
-          <p className="show-photo-credit">
-            Photo:{" "}
-            {photo.attributions.map((attribution, index) => (
-              <span key={`${attribution.displayName}-${index}`}>
-                {index > 0 ? ", " : ""}
-                {attribution.photoUri && (
-                  <i
-                    aria-hidden="true"
-                    className="show-photo-author"
-                    style={{
-                      backgroundImage: `url(${JSON.stringify(attribution.photoUri).slice(1, -1)})`,
-                    }}
-                  />
-                )}
-                {attribution.uri ? (
-                  <a href={attribution.uri} rel="noreferrer">
-                    {attribution.displayName}
-                  </a>
-                ) : (
-                  attribution.displayName
-                )}
-              </span>
-            ))}
           </p>
         )}
       </div>
