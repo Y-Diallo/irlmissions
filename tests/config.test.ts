@@ -57,7 +57,35 @@ describe("demo owner login", () => {
     await expect(createDemoOwnerToken(demoEnv, mint)).resolves.toBe(
       "custom-token"
     )
-    expect(mint).toHaveBeenCalledWith("demo-owner", { owner: true })
+    expect(mint).toHaveBeenCalledWith("demo-owner", {
+      owner: true,
+      demo: true,
+    })
+  })
+
+  it("mints the isolated demo identity in live mode only when opted in", async () => {
+    const mint = vi.fn().mockResolvedValue("deployed-demo-token")
+    await expect(
+      createDemoOwnerToken(
+        {
+          ...demoEnv,
+          NODE_ENV: "production",
+          NEXT_PUBLIC_APP_MODE: "live",
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: "real-project",
+          FIREBASE_PROJECT_ID: "real-project",
+          NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST: undefined,
+          NEXT_PUBLIC_FIRESTORE_EMULATOR_HOST: undefined,
+          FIREBASE_AUTH_EMULATOR_HOST: undefined,
+          FIRESTORE_EMULATOR_HOST: undefined,
+          DEMO_MODE_ENABLED: "true",
+        },
+        mint
+      )
+    ).resolves.toBe("deployed-demo-token")
+    expect(mint).toHaveBeenCalledWith("demo-owner", {
+      owner: true,
+      demo: true,
+    })
   })
 
   it.each([

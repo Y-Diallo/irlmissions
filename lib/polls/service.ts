@@ -1,4 +1,5 @@
 import "server-only"
+import { isDemoTenant } from "@/shared/auth/demo-owner"
 import {
   getTwitchAccessToken,
   opaqueId,
@@ -21,6 +22,12 @@ import { createPollStore } from "@/lib/polls/store"
 import { readServerConfig } from "@/shared/config"
 
 type PollStore = ReturnType<typeof createPollStore>
+
+function fakePolls(tenantId: string) {
+  return (
+    readServerConfig(process.env).mode === "emulator" || isDemoTenant(tenantId)
+  )
+}
 
 async function liveDependencies(tenantId: string): Promise<{
   store: PollStore
@@ -117,6 +124,9 @@ const ENDED_STATUSES: PendingPollEnd["status"][] = [
 ]
 
 export async function endLivePoll(tenantId: string) {
+  if (fakePolls(tenantId)) {
+    throw new PollError("Use Demo controls to end this simulated poll.", 409)
+  }
   const deps = await liveDependencies(tenantId)
   const record = await deps.store.read()
   if (record?.status !== "active" || !record.twitchPollId) {
@@ -163,7 +173,7 @@ export async function endLivePoll(tenantId: string) {
 
 /** Ends Twitch voting without selecting a winner, then unlocks every choice. */
 export async function cancelLivePoll(tenantId: string) {
-  if (readServerConfig(process.env).mode === "emulator") {
+  if (fakePolls(tenantId)) {
     const store = createPollStore(getServerFirebase().db, tenantId)
     const record = await store.read()
     if (!record || (record.status !== "active" && record.status !== "tie")) {
@@ -199,7 +209,7 @@ export async function startLivePoll(
   tenantId: string,
   command: StartPollCommand
 ) {
-  if (readServerConfig(process.env).mode === "emulator") {
+  if (fakePolls(tenantId)) {
     const store = createPollStore(getServerFirebase().db, tenantId)
     const now = Date.now()
     const attemptId = opaqueId()

@@ -1,7 +1,7 @@
 export type TenantContext = {
   tenantId: string
   uid: string
-  mode: "emulator" | "live"
+  mode: "emulator" | "demo" | "live"
 }
 
 const LIVE_TENANT = /^\d{1,32}$/

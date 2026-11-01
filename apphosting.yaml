@@ -18,6 +18,17 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  # Public judge demo. The server still isolates it to the fixed demo tenant
+  # and fake providers; real Twitch tenants cannot call simulator endpoints.
+  - variable: NEXT_PUBLIC_DEMO_MODE_ENABLED
+    value: "true"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: DEMO_MODE_ENABLED
+    value: "true"
+    availability:
+      - RUNTIME
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
     value: irlmissions-53ba4
     availability:

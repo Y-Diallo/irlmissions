@@ -93,8 +93,8 @@ export function DevPanel({
       <CardHeader>
         <CardTitle className="text-lg">Demo controls</CardTitle>
         <CardDescription>
-          Emulator only. These controls use fake providers and never contact
-          Twitch, Google, OpenAI, or RealtimeIRL.
+          These controls use fake providers and never contact Twitch, Places,
+          Routes, OpenAI, or RealtimeIRL.
         </CardDescription>
       </CardHeader>
       <CardContent className="gap-5">

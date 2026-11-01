@@ -135,7 +135,11 @@ describe("tenant Twitch grant and Firebase bridge", () => {
       userId: "99",
       clientId: "test-client",
       login: "second-streamer",
-      scopes: ["channel:manage:redemptions", "channel:manage:polls", "moderation:read"],
+      scopes: [
+        "channel:manage:redemptions",
+        "channel:manage:polls",
+        "moderation:read",
+      ],
       expiresIn: 3600,
     })
     const state = createOAuthState(twitchConfig.clientSecret, clock)
@@ -215,9 +219,9 @@ describe("server-side Twitch refresh", () => {
     provider.validate
       .mockRejectedValueOnce(new InvalidTwitchTokenError())
       .mockRejectedValueOnce(new AuthError("provider", 503))
-    await expect(getTwitchAccessToken(twitchConfig, deps, "42")).rejects.toThrow(
-      "provider"
-    )
+    await expect(
+      getTwitchAccessToken(twitchConfig, deps, "42")
+    ).rejects.toThrow("provider")
     expect((await store.readTokens("42"))?.refreshToken).toBe("rotated-refresh")
     expect(revokeSessions).not.toHaveBeenCalled()
   })
@@ -225,18 +229,18 @@ describe("server-side Twitch refresh", () => {
     const { deps, provider, store, revokeSessions } = authFixture()
     provider.validate.mockRejectedValue(new InvalidTwitchTokenError())
     provider.refresh.mockRejectedValue(new AuthError("expired"))
-    await expect(getTwitchAccessToken(twitchConfig, deps, "42")).rejects.toThrow(
-      "expired"
-    )
+    await expect(
+      getTwitchAccessToken(twitchConfig, deps, "42")
+    ).rejects.toThrow("expired")
     expect(store.deleteTokens).toHaveBeenCalledWith("42", "test-access")
     expect(revokeSessions).toHaveBeenCalledWith("twitch:42")
   })
   it("keeps credentials on a transient validation failure", async () => {
     const { deps, provider, store } = authFixture()
     provider.validate.mockRejectedValue(new AuthError("provider", 503))
-    await expect(getTwitchAccessToken(twitchConfig, deps, "42")).rejects.toThrow(
-      "provider"
-    )
+    await expect(
+      getTwitchAccessToken(twitchConfig, deps, "42")
+    ).rejects.toThrow("provider")
     expect(store.deleteTokens).not.toHaveBeenCalled()
     expect(provider.refresh).not.toHaveBeenCalled()
   })
@@ -244,9 +248,9 @@ describe("server-side Twitch refresh", () => {
     const { deps, provider, store } = authFixture()
     provider.validate.mockRejectedValueOnce(new InvalidTwitchTokenError())
     store.claimRefresh.mockResolvedValueOnce(false)
-    await expect(getTwitchAccessToken(twitchConfig, deps, "42")).rejects.toThrow(
-      "busy"
-    )
+    await expect(
+      getTwitchAccessToken(twitchConfig, deps, "42")
+    ).rejects.toThrow("busy")
     expect(provider.refresh).not.toHaveBeenCalled()
     store.finishRefresh.mockResolvedValueOnce(false)
     await expect(
@@ -259,13 +263,9 @@ describe("server-side Twitch refresh", () => {
 describe("Firebase owner authorization", () => {
   it("preserves temporary verifier failures as retryable instead of signing out", async () => {
     await expect(
-      authenticateOwner(
-        "Bearer id-token",
-        { mode: "live" },
-        async () => {
-          throw new AuthError("unavailable", 503)
-        }
-      )
+      authenticateOwner("Bearer id-token", { mode: "live" }, async () => {
+        throw new AuthError("unavailable", 503)
+      })
     ).rejects.toMatchObject({ status: 503 })
   })
   it("accepts a self-consistent verified Twitch tenant token", async () => {
@@ -276,11 +276,7 @@ describe("Firebase owner authorization", () => {
       privateClaim: "not-returned",
     }))
     await expect(
-      authenticateOwner(
-        "Bearer id-token",
-        { mode: "live" },
-        verify
-      )
+      authenticateOwner("Bearer id-token", { mode: "live" }, verify)
     ).resolves.toEqual({
       uid: "twitch:42",
       mode: "live",
@@ -288,6 +284,26 @@ describe("Firebase owner authorization", () => {
       twitchUserId: "42",
     })
     expect(verify).toHaveBeenCalledWith("id-token")
+  })
+  it("accepts only an explicitly claimed demo owner when deployed demo is enabled", async () => {
+    await expect(
+      authenticateOwner(
+        "Bearer demo-token",
+        { mode: "live", demoEnabled: true },
+        async () => ({ uid: "demo-owner", owner: true, demo: true })
+      )
+    ).resolves.toEqual({
+      uid: "demo-owner",
+      mode: "demo",
+      tenantId: "demo-owner",
+    })
+    await expect(
+      authenticateOwner(
+        "Bearer demo-token",
+        { mode: "live", demoEnabled: false },
+        async () => ({ uid: "demo-owner", owner: true, demo: true })
+      )
+    ).rejects.toThrow("owner")
   })
   it.each([
     { uid: "twitch:other", owner: true, twitchUserId: "42" },
@@ -308,11 +324,7 @@ describe("Firebase owner authorization", () => {
       throw new Error("revoked")
     })
     await expect(
-      authenticateOwner(
-        "Bearer expired",
-        { mode: "live" },
-        verify
-      )
+      authenticateOwner("Bearer expired", { mode: "live" }, verify)
     ).rejects.toThrow("unauthorized")
     verify.mockClear()
     await expect(

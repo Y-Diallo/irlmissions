@@ -1,4 +1,5 @@
 import "server-only"
+import { isDemoTenant } from "@/shared/auth/demo-owner"
 import { getTwitchAccessToken, readTwitchConfig } from "@/shared/auth/twitch"
 import { readServerConfig } from "@/shared/config"
 import {
@@ -19,7 +20,10 @@ async function liveDependencies(
 ): Promise<AutomationDependencies> {
   const startPoll: AutomationDependencies["startPoll"] = (command) =>
     startLivePoll(tenantId, command)
-  if (readServerConfig(process.env).mode === "emulator") {
+  if (
+    readServerConfig(process.env).mode === "emulator" ||
+    isDemoTenant(tenantId)
+  ) {
     return {
       async isTrusted() {
         return true

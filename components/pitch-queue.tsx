@@ -790,6 +790,7 @@ export function PitchQueue() {
   const [mission, setMission] = useState<MissionOwnerView | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [signedIn, setSignedIn] = useState(false)
+  const [demoSession, setDemoSession] = useState(false)
   const [loading, setLoading] = useState(true)
   const [pollBusy, setPollBusy] = useState(false)
   const [pollMessage, setPollMessage] = useState("")
@@ -974,8 +975,18 @@ export function PitchQueue() {
         if (!active) return
         setSignedIn(!!user)
         setLoading(!!user)
-        if (user) void refresh()
-        else {
+        if (user) {
+          void user
+            .getIdTokenResult()
+            .then((result) => {
+              if (active) setDemoSession(result.claims.demo === true)
+            })
+            .catch(() => {
+              if (active) setDemoSession(false)
+            })
+          void refresh()
+        } else {
+          setDemoSession(false)
           setPitches([])
           setPoll(null)
           setMission(null)
@@ -1280,7 +1291,7 @@ export function PitchQueue() {
           </span>
         </label>
       )}
-      {signedIn && process.env.NEXT_PUBLIC_APP_MODE === "emulator" && (
+      {signedIn && demoSession && (
         <div className="order-5">
           <DevPanel
             poll={poll}

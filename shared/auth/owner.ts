@@ -6,14 +6,18 @@ import { validateTenantId, type TenantContext } from "../tenant"
 export type VerifiedIdentity = {
   uid: string
   owner?: unknown
+  demo?: unknown
   twitchUserId?: unknown
 }
-export type OwnerPolicy = { mode: "emulator" | "live" }
+export type OwnerPolicy = {
+  mode: "emulator" | "live"
+  demoEnabled?: boolean
+}
 
 export function readOwnerPolicy(env: Environment): OwnerPolicy {
   const config = readServerConfig(env)
   if (config.mode === "emulator") return { mode: "emulator" }
-  return { mode: "live" }
+  return { mode: "live", demoEnabled: env.DEMO_MODE_ENABLED === "true" }
 }
 
 export async function authenticateOwner(
@@ -30,6 +34,18 @@ export async function authenticateOwner(
     if (error instanceof AuthError) throw error
     throw new AuthError("unauthorized")
   }
+  if (
+    policy.demoEnabled &&
+    identity.uid === DEMO_OWNER_UID &&
+    identity.owner === true &&
+    identity.demo === true
+  ) {
+    return {
+      uid: identity.uid,
+      mode: "demo",
+      tenantId: DEMO_OWNER_UID,
+    } satisfies TenantContext
+  }
   let tenantId = "demo-owner"
   if (policy.mode === "live") {
     try {
@@ -41,7 +57,8 @@ export async function authenticateOwner(
   const valid =
     policy.mode === "emulator"
       ? identity.uid === DEMO_OWNER_UID
-      : identity.uid === ownerUid(tenantId) && identity.twitchUserId === tenantId
+      : identity.uid === ownerUid(tenantId) &&
+        identity.twitchUserId === tenantId
   if (!valid || identity.owner !== true) throw new AuthError("owner", 403)
   // Never spread a decoded JWT into a response (it may contain unrelated claims).
   return {

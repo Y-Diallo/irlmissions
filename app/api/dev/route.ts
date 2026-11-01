@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server"
 import { authFailure, NO_STORE } from "@/lib/auth/http"
 import { DevError, parseDevAction } from "@/shared/dev"
-import { readServerConfig } from "@/shared/config"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
   try {
-    if (readServerConfig(process.env).mode !== "emulator") {
-      return NextResponse.json({ error: "not_found" }, { status: 404 })
-    }
     const [{ requireServerOwner }, { getServerFirebase }, { runDevAction }] =
       await Promise.all([
         import("@/lib/auth/server"),
@@ -17,6 +13,9 @@ export async function POST(request: Request) {
         import("@/lib/dev/simulator"),
       ])
     const owner = await requireServerOwner(request.headers.get("authorization"))
+    if (owner.mode !== "emulator" && owner.mode !== "demo") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 })
+    }
     const action = parseDevAction(await request.json())
     return NextResponse.json(
       await runDevAction(getServerFirebase().db, owner.tenantId, action),

@@ -6,6 +6,9 @@ export function AuthControl() {
   return process.env.NEXT_PUBLIC_APP_MODE === "emulator" ? (
     <DemoLogin compact />
   ) : (
-    <TwitchLogin compact />
+    <TwitchLogin
+      compact
+      demoEnabled={process.env.NEXT_PUBLIC_DEMO_MODE_ENABLED === "true"}
+    />
   )
 }

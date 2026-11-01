@@ -13,7 +13,13 @@ const LOGIN_ERRORS: Record<string, string> = {
   expired: "Your connection expired. Please sign in again.",
 }
 
-export function TwitchLogin({ compact = false }: { compact?: boolean }) {
+export function TwitchLogin({
+  compact = false,
+  demoEnabled = false,
+}: {
+  compact?: boolean
+  demoEnabled?: boolean
+}) {
   const [uid, setUid] = useState<string | null>(null)
   const [status, setStatus] = useState("Checking sign-in…")
   const [busy, setBusy] = useState(false)
@@ -120,6 +126,26 @@ export function TwitchLogin({ compact = false }: { compact?: boolean }) {
     }
   }
 
+  async function loginDemo() {
+    setBusy(true)
+    try {
+      const response = await fetch("/api/auth/demo", { method: "POST" })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? "Demo unavailable")
+      const [{ getBrowserFirebase }, { signInWithCustomToken }] =
+        await Promise.all([
+          import("@/lib/firebase/client"),
+          import("firebase/auth"),
+        ])
+      await signInWithCustomToken(getBrowserFirebase().auth, result.token)
+      setStatus("Demo connected.")
+    } catch {
+      setStatus("Demo sign-in is unavailable. Try again.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className={compact ? "flex flex-col items-end gap-2" : "space-y-4"}>
       {uid ? (
@@ -136,16 +162,26 @@ export function TwitchLogin({ compact = false }: { compact?: boolean }) {
           {busy ? "Signing out…" : "Sign out"}
         </Button>
       ) : (
-        <a
-          className={buttonVariants({
-            className: compact
-              ? "min-h-11 min-w-40 px-4"
-              : "min-h-12 px-5 text-base",
-          })}
-          href="/api/auth/twitch/login"
-        >
-          Sign in with Twitch
-        </a>
+        <div className="flex flex-wrap justify-end gap-2">
+          <a
+            className={buttonVariants({
+              className: compact ? "min-h-11 px-4" : "min-h-12 px-5 text-base",
+            })}
+            href="/api/auth/twitch/login"
+          >
+            Sign in with Twitch
+          </a>
+          {demoEnabled && (
+            <Button
+              className={compact ? "min-h-11 px-4" : "min-h-12 px-5 text-base"}
+              variant="outline"
+              disabled={busy}
+              onClick={() => void loginDemo()}
+            >
+              Try demo account
+            </Button>
+          )}
+        </div>
       )}
       {(!compact || !uid) && (
         <p

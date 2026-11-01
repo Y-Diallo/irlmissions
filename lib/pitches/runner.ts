@@ -1,5 +1,6 @@
 import "server-only"
 import { getTwitchAccessToken, readTwitchConfig } from "@/shared/auth/twitch"
+import { isDemoTenant } from "@/shared/auth/demo-owner"
 import { readServerConfig } from "@/shared/config"
 import {
   processPitch,
@@ -58,7 +59,7 @@ async function dependencies(tenantId: string) {
     duplicates: createDuplicateSuggester(db, tenantId),
     now: Date.now,
   }
-  if (firebase.mode === "emulator") {
+  if (firebase.mode === "emulator" || isDemoTenant(tenantId)) {
     return { ...common, ...createFakePitchProviders() }
   }
 
@@ -95,7 +96,7 @@ export async function runClaimablePitches(
   const firebase = readServerConfig(process.env)
   const pollEvents = await processPendingPollEnds(db, tenantId, limit, now)
   const resolveRedemptions = () =>
-    firebase.mode === "live"
+    firebase.mode === "live" && !isDemoTenant(tenantId)
       ? processPendingRedemptions(db, tenantId, limit, now)
       : Promise.resolve({
           scanned: 0,

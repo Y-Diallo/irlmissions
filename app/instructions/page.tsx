@@ -100,7 +100,7 @@ export default function InstructionsPage() {
             a marker or trail.
           </p>
           <p>
-            <strong>Simulator:</strong> in emulator mode, inject pitches and
+            <strong>Simulator:</strong> in a demo session, inject pitches and
             manually drive polls, movement, arrival, and GPS loss.
           </p>
         </CardContent>
