@@ -60,6 +60,15 @@ describe("OpenAI pitch extractor", () => {
     expect(request.instructions).toContain(
       "If the viewer did not provide a consequence, return an empty string"
     )
+    expect(request.instructions).toContain(
+      "Ordinary public social interaction must not produce a risk flag"
+    )
+    expect(request.instructions).toContain(
+      "filming or touching without consent"
+    )
+    expect(
+      request.text.format.schema.properties.riskFlags.description
+    ).toContain("inviting a stranger to a harmless game or challenge")
     expect(request.tools).toBeUndefined()
   })
 

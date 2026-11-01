@@ -40,12 +40,12 @@ const schema = {
     anywhere: {
       type: "boolean",
       description:
-        "True unless the viewer explicitly names a destination or asks for a kind of destination. Movement words such as go, walk, run, explore, or trick-or-treat do not imply a destination by themselves. For example, \"go and trick or treat while walking backwards\" is anywhere=true, while \"go to Pike Place Market and trick or treat\" is anywhere=false.",
+        'True unless the viewer explicitly names a destination or asks for a kind of destination. Movement words such as go, walk, run, explore, or trick-or-treat do not imply a destination by themselves. For example, "go and trick or treat while walking backwards" is anywhere=true, while "go to Pike Place Market and trick or treat" is anywhere=false.',
     },
     placeQuery: {
       type: "string",
       description:
-        "Only the concise destination phrase explicitly requested by the viewer, with no challenge or consequence text. Examples: \"park\", \"Pike Place Market\", \"coffee shop\". Never infer a neighborhood, business, or destination that was not requested. Empty string when anywhere is true.",
+        'Only the concise destination phrase explicitly requested by the viewer, with no challenge or consequence text. Examples: "park", "Pike Place Market", "coffee shop". Never infer a neighborhood, business, or destination that was not requested. Empty string when anywhere is true.',
     },
     challenge: {
       type: "string",
@@ -54,7 +54,7 @@ const schema = {
     publicLabelSuggestion: {
       type: "string",
       description:
-        "A complete, success-oriented Twitch objective of at most 25 characters. Remove filler such as go to, challenge a stranger, and conjunctions; keep the destination category or safe chain name plus the core activity. Use an action that describes success: when losing triggers the consequence, use Win rather than Play. Example: \"Win Tic-Tac-Toe at a Gym\". Never end with a dangling word such as and, at, to, or with. Omit exact addresses and local destination names.",
+        'A complete, success-oriented Twitch objective of at most 25 characters. Remove filler such as go to, challenge a stranger, and conjunctions; keep the destination category or safe chain name plus the core activity. Use an action that describes success: when losing triggers the consequence, use Win rather than Play. Example: "Win Tic-Tac-Toe at a Gym". Never end with a dangling word such as and, at, to, or with. Omit exact addresses and local destination names.',
     },
     durationMinutes: { type: "integer", minimum: 1, maximum: 120 },
     failConsequence: {
@@ -65,6 +65,8 @@ const schema = {
     riskFlags: {
       type: "array",
       maxItems: 8,
+      description:
+        "Concerns that require owner review. Ordinary public social interaction is not a concern by itself: do not flag talking to someone, asking a question, requesting help, or inviting a stranger to a harmless game or challenge. Flag interaction only when the request includes harassment, intimidation, coercion, following, unwanted persistence, sexual conduct, targeting a vulnerable person, or filming or touching without consent.",
       items: {
         type: "object",
         additionalProperties: false,
@@ -156,7 +158,7 @@ export function createOpenAIPitchExtractor(
               store: false,
               max_output_tokens: 1000,
               instructions:
-                "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. A verb like go, walk, run, explore, or trick-or-treat is not a destination: set anywhere=true unless the viewer explicitly names a place or requests a kind of place. Named public businesses, attractions, markets, parks, neighborhoods, districts, and cities are valid destinations. Flag dangerous, illegal, harassing, coercive, or otherwise concerning activity for human review, including any requested failure consequence. Preserve an explicitly viewer-provided consequence and flag it when concerning so the owner can decide. If the viewer did not provide a consequence, return an empty string; never invent one. The public label is a poll choice of at most 25 characters that plainly restates the viewer's request. Do not make it vague or mysterious. Big chain names are fine because they don't reveal which location; leave out exact addresses and local destination names before arrival.",
+                "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. A verb like go, walk, run, explore, or trick-or-treat is not a destination: set anywhere=true unless the viewer explicitly names a place or requests a kind of place. Named public businesses, attractions, markets, parks, neighborhoods, districts, and cities are valid destinations. Flag dangerous, illegal, harassing, coercive, or otherwise concerning activity for human review, including any requested failure consequence. Ordinary public social interaction must not produce a risk flag by itself. Talking to someone, asking a question, requesting help, trick-or-treating, or inviting a stranger to a harmless game or challenge are normal IRL activities. Do not assume harassment or lack of consent merely because the participant is a stranger. Flag social interaction when the request itself calls for harassment, intimidation, coercion, following, unwanted persistence after refusal, sexual conduct, targeting minors or vulnerable people, or filming or touching without consent. Preserve an explicitly viewer-provided consequence and flag it when concerning so the owner can decide. If the viewer did not provide a consequence, return an empty string; never invent one. The public label is a poll choice of at most 25 characters that plainly restates the viewer's request. Do not make it vague or mysterious. Big chain names are fine because they don't reveal which location; leave out exact addresses and local destination names before arrival.",
               input: text,
               text: {
                 format: {
