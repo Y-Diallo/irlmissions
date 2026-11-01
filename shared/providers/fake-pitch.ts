@@ -1,6 +1,7 @@
-import type {
-  PitchProcessorDependencies,
-  PlaceCandidate,
+import {
+  fitPollLabel,
+  type PitchProcessorDependencies,
+  type PlaceCandidate,
 } from "@/shared/pitches/processor"
 
 const fallbackPlace: PlaceCandidate = {
@@ -41,7 +42,9 @@ export function createFakePitchProviders(
         return {
           placeQuery: text,
           challenge: text.replaceAll(/\[[^\]]+\]/g, "").trim(),
-          publicLabelSuggestion: "Chat-picked mystery objective",
+          publicLabelSuggestion: fitPollLabel(
+            text.replaceAll(/\[[^\]]+\]/g, "").trim() || "Chat-picked objective"
+          ),
           durationMinutes: 10,
           riskFlags,
         }

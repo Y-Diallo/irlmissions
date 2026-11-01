@@ -6,7 +6,7 @@ import type {
   RiskFlag,
   WalkingRoute,
 } from "@/shared/pitches/processor"
-import { MAX_POLL_CHOICE_LENGTH } from "@/shared/polls"
+import { MAX_POLL_CHOICE_LENGTH, withoutDashes } from "@/shared/polls"
 import type { RedemptionResolution } from "@/shared/redemptions"
 
 export type ReviewStatus =
@@ -126,7 +126,9 @@ export function parseReviewCommand(value: unknown): ReviewCommand {
       return {
         action: "edit_details",
         publicLabel: cleanText(
-          input.publicLabel,
+          typeof input.publicLabel === "string"
+            ? withoutDashes(input.publicLabel)
+            : input.publicLabel,
           "public_label",
           MAX_POLL_CHOICE_LENGTH
         ),

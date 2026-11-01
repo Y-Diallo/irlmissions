@@ -47,7 +47,7 @@ const schema = {
     publicLabelSuggestion: {
       type: "string",
       description:
-        "A short poll label that describes the objective but does not reveal the destination name, address, neighborhood, or coordinates.",
+        "A Twitch poll choice of at most 25 characters that restates what the viewer asked, in their words. Keep the activity and kind of place; omit only the specific business name, street address, and neighborhood.",
     },
     durationMinutes: { type: "integer", minimum: 1, maximum: 120 },
     riskFlags: {
@@ -117,7 +117,7 @@ export function createOpenAIPitchExtractor(
               store: false,
               max_output_tokens: 600,
               instructions:
-                "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. Flag dangerous, illegal, harassing, coercive, or otherwise concerning activity for human review. The public label must hide all destination identity until arrival.",
+                "Extract an IRL stream pitch into JSON. Never approve or reject it. Never invent a destination. Flag dangerous, illegal, harassing, coercive, or otherwise concerning activity for human review. The public label is a poll choice of at most 25 characters that plainly restates the viewer's request, such as \"Eat the spiciest wings\" or \"Sing karaoke at a bar\". Do not make it vague or mysterious; leave out only the specific business name, address, and neighborhood.",
               input: text,
               text: {
                 format: {

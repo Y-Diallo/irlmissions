@@ -1,5 +1,5 @@
 import type { MissionRecord } from "@/shared/missions"
-import type { PollRecord } from "@/shared/polls"
+import { withoutDashes, type PollRecord } from "@/shared/polls"
 
 type RevealedPlace = {
   placeName?: string
@@ -109,7 +109,7 @@ function text(value: unknown, maximum: number) {
   if (typeof value !== "string") {
     throw new OverlayError("invalid_overlay_projection")
   }
-  const result = value.trim()
+  const result = withoutDashes(value)
   if (!result || result.length > maximum) {
     throw new OverlayError("invalid_overlay_projection")
   }

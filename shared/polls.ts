@@ -4,6 +4,14 @@ export const MIN_POLL_CHOICES = 2
 export const MAX_POLL_CHOICES = 5
 export const MAX_POLL_CHOICE_LENGTH = 25
 
+// Viewer-facing text (Twitch polls, OBS overlay) never shows em or en dashes.
+export function withoutDashes(text: string) {
+  return text
+    .replace(/\s*—\s*/g, ", ")
+    .replace(/–/g, "-")
+    .trim()
+}
+
 export type StartPollCommand = {
   redemptionIds: string[]
   durationSeconds: number
@@ -150,7 +158,7 @@ export function preparePollRecord(
       throw new PollError("pitch_not_approved")
     }
     if (pitch.lockedBy) throw new PollError("pitch_locked")
-    const title = pitch.publicLabel?.trim()
+    const title = pitch.publicLabel && withoutDashes(pitch.publicLabel)
     if (!title || title.length > MAX_POLL_CHOICE_LENGTH) {
       throw new PollError("invalid_poll_label", 400)
     }

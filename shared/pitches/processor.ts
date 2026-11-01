@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto"
 
+import { MAX_POLL_CHOICE_LENGTH, withoutDashes } from "@/shared/polls"
+
 const CLAIM_MS = 2 * 60 * 1000
 const DEFAULT_LOCATION_MAX_AGE_MS = 2 * 60 * 1000
 const FEED_HEARTBEAT_MAX_AGE_MS = 2 * 60 * 1000
@@ -215,6 +217,18 @@ function cleanText(value: unknown, max: number, code: string) {
   return text
 }
 
+// Twitch rejects longer poll choices, so cut at a word boundary when possible.
+export function fitPollLabel(text: string) {
+  const label = withoutDashes(text).replace(/\s+/g, " ")
+  if (label.length <= MAX_POLL_CHOICE_LENGTH) return label
+  const cut = label.slice(0, MAX_POLL_CHOICE_LENGTH + 1)
+  const space = cut.lastIndexOf(" ")
+  return (space >= 10 ? cut.slice(0, space) : cut.slice(0, -1)).replace(
+    /[\s,.;:!?-]+$/,
+    ""
+  )
+}
+
 export function validateExtraction(value: PitchExtraction): PitchExtraction {
   const durationMinutes = value.durationMinutes
   if (
@@ -240,8 +254,10 @@ export function validateExtraction(value: PitchExtraction): PitchExtraction {
     placeQuery: cleanText(value.placeQuery, 300, "invalid_extraction"),
     challenge: cleanText(value.challenge, 500, "invalid_extraction"),
     publicLabelSuggestion: cleanText(
-      value.publicLabelSuggestion,
-      80,
+      fitPollLabel(
+        cleanText(value.publicLabelSuggestion, 300, "invalid_extraction")
+      ),
+      MAX_POLL_CHOICE_LENGTH,
       "invalid_extraction"
     ),
     durationMinutes,
@@ -257,7 +273,7 @@ function fallbackExtraction(
   return {
     placeQuery: text,
     challenge: text,
-    publicLabelSuggestion: "Chat-picked mystery objective",
+    publicLabelSuggestion: fitPollLabel(text),
     durationMinutes: defaultDurationMinutes,
     riskFlags: [],
   }
