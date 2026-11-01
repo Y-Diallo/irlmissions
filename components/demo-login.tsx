@@ -60,7 +60,7 @@ export function DemoLogin({ compact = false }: { compact?: boolean }) {
         role="status"
         className={
           compact
-            ? "max-w-64 text-right text-xs leading-relaxed text-muted-foreground"
+            ? "h-8 max-w-64 overflow-hidden text-right text-xs leading-relaxed text-muted-foreground"
             : "text-sm leading-relaxed"
         }
       >

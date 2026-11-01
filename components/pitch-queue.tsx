@@ -155,6 +155,29 @@ function StatusBadge({ pitch }: { pitch: PitchReviewItem }) {
   )
 }
 
+function QueueLoading() {
+  return (
+    <section
+      aria-label="Loading producer console"
+      aria-busy="true"
+      className="flex min-h-[36rem] animate-pulse flex-col gap-4"
+    >
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="h-11 rounded-md border bg-muted" />
+        <div className="h-11 rounded-md border bg-muted" />
+      </div>
+      <div className="grid min-h-14 grid-cols-[1fr_6rem] items-center gap-4">
+        <div className="h-8 w-36 rounded bg-muted" />
+        <div className="h-14 rounded-md bg-muted" />
+      </div>
+      <div className="h-20 rounded-lg border bg-muted/60" />
+      <div className="h-72 rounded-xl border bg-muted/50" />
+      <div className="h-28 rounded-xl border bg-muted/40" />
+      <span className="sr-only">Loading pitches, poll, and mission.</span>
+    </section>
+  )
+}
+
 function routeDistance(meters: number) {
   return meters < 1000
     ? `${Math.round(meters)} m`
@@ -1164,6 +1187,10 @@ export function PitchQueue() {
     Number.isInteger(pollDurationSeconds) &&
     pollDurationSeconds >= 15 &&
     pollDurationSeconds <= 1800
+
+  // Auth resolves before the initial API reads. Do not paint the empty queue in
+  // between: it would be replaced moments later and shift the whole console.
+  if (loading) return <QueueLoading />
 
   return (
     <section aria-labelledby="queue-heading" className="flex flex-col gap-4">

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 
 const LOGIN_ERRORS: Record<string, string> = {
   owner: "That Twitch identity could not be verified.",
@@ -124,7 +124,9 @@ export function TwitchLogin({ compact = false }: { compact?: boolean }) {
     <div className={compact ? "flex flex-col items-end gap-2" : "space-y-4"}>
       {uid ? (
         <Button
-          className={compact ? "min-h-11 px-4" : "min-h-12 px-5 text-base"}
+          className={
+            compact ? "min-h-11 min-w-40 px-4" : "min-h-12 px-5 text-base"
+          }
           variant="outline"
           disabled={busy}
           onClick={() => {
@@ -134,25 +136,30 @@ export function TwitchLogin({ compact = false }: { compact?: boolean }) {
           {busy ? "Signing out…" : "Sign out"}
         </Button>
       ) : (
-        <Button
-          className={compact ? "min-h-11 px-4" : "min-h-12 px-5 text-base"}
-          onClick={() => window.location.assign("/api/auth/twitch/login")}
+        <a
+          className={buttonVariants({
+            className: compact
+              ? "min-h-11 min-w-40 px-4"
+              : "min-h-12 px-5 text-base",
+          })}
+          href="/api/auth/twitch/login"
         >
           Sign in with Twitch
-        </Button>
+        </a>
       )}
       {(!compact || !uid) && (
         <p
           role="status"
           className={
             compact
-              ? "max-w-64 text-right text-xs leading-relaxed text-muted-foreground"
+              ? "h-8 max-w-64 overflow-hidden text-right text-xs leading-relaxed text-muted-foreground"
               : "text-sm leading-relaxed"
           }
         >
           {status}
         </p>
       )}
+      {compact && uid && <span className="block h-8" aria-hidden="true" />}
     </div>
   )
 }
