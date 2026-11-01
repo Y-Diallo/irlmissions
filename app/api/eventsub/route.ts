@@ -1,5 +1,6 @@
 import { getServerFirebase } from "@/lib/firebase/admin"
 import { createEventSubStore } from "@/lib/eventsub/store"
+import { createPollEndStore } from "@/lib/polls/end-store"
 import {
   acceptEventSub,
   EventSubError,
@@ -54,11 +55,20 @@ export async function POST(request: Request) {
       input,
       {
         store: {
-          save(write) {
-            return createEventSubStore(
-              getServerFirebase().db,
-              broadcasterId
-            ).save(write)
+          async save(write) {
+            const db = getServerFirebase().db
+            const result = await createEventSubStore(db, broadcasterId).save(
+              write
+            )
+            if (write.kind === "poll_end" && result === "created") {
+              // Apply the result now instead of waiting for the scheduled
+              // processor. It is Firestore-only; on failure the event stays
+              // pending for the processor or the owner's End poll resync.
+              await createPollEndStore(db, broadcasterId)
+                .apply(write.poll.pollId, Date.now())
+                .catch(() => null)
+            }
+            return result
           },
         },
         now: Date.now,

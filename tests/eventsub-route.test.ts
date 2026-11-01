@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   })),
   save: vi.fn(async () => "created" as const),
   createEventSubStore: vi.fn(),
+  applyPollEnd: vi.fn(async () => "winner" as const),
 }))
 mocks.createEventSubStore.mockImplementation(() => ({ save: mocks.save }))
 
@@ -21,6 +22,9 @@ vi.mock("@/lib/firebase/admin", () => ({
 }))
 vi.mock("@/lib/eventsub/store", () => ({
   createEventSubStore: mocks.createEventSubStore,
+}))
+vi.mock("@/lib/polls/end-store", () => ({
+  createPollEndStore: () => ({ apply: mocks.applyPollEnd }),
 }))
 
 import { POST } from "@/app/api/eventsub/route"
@@ -168,6 +172,38 @@ describe("EventSub route", () => {
     expect(mocks.save).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "poll_end" })
     )
+    expect(mocks.applyPollEnd).toHaveBeenCalledWith("poll-1", clock)
+  })
+
+  it("still acknowledges a saved poll end when applying it fails", async () => {
+    setLiveEnv()
+    vi.setSystemTime(clock)
+    mocks.applyPollEnd.mockRejectedValueOnce(new Error("synthetic contention"))
+    const value = {
+      subscription: {
+        id: "poll-subscription-1",
+        status: "enabled",
+        type: POLL_END,
+        version: "1",
+        condition: { broadcaster_user_id: "42" },
+      },
+      event: {
+        id: "poll-2",
+        broadcaster_user_id: "42",
+        broadcaster_user_login: "owner",
+        broadcaster_user_name: "Owner",
+        title: "What should we do next?",
+        choices: [
+          { id: "choice-1", title: "Mystery challenge", votes: 2 },
+          { id: "choice-2", title: "Find something blue", votes: 5 },
+        ],
+        status: "completed",
+        started_at: "2026-10-30T17:58:00Z",
+        ended_at: "2026-10-30T17:59:00Z",
+      },
+    }
+    const response = await POST(request(value, { subscriptionType: POLL_END }))
+    expect(response.status).toBe(204)
   })
 
   it("rejects an invalid signature without initializing Firebase", async () => {

@@ -178,8 +178,13 @@ describe("RealtimeIRL arrival policy", () => {
     })
   })
 
-  it("privacy-checks reveal after manual arrival without restarting its timer", () => {
+  it("manual arrival reveals at once; later GPS leaves the timer alone", () => {
     const manual = transitionMission(mission(), "arrive", now - 20_000)
+    expect(manual).toMatchObject({
+      arrivedAt: now - 20_000,
+      timerEndsAt: now + 580_000,
+      destinationRevealedAt: now - 20_000,
+    })
     const decision = evaluate({
       current: manual,
       confirmation: {
@@ -188,14 +193,8 @@ describe("RealtimeIRL arrival policy", () => {
         lastObservedAt: now - 10_000,
       },
     })
-    expect(decision).toMatchObject({
-      status: "revealed",
-      mission: {
-        arrivedAt: now - 20_000,
-        timerEndsAt: now + 580_000,
-        destinationRevealedAt: now,
-      },
-    })
+    expect(decision).toMatchObject({ status: "already_revealed" })
+    expect(decision).not.toHaveProperty("mission")
   })
 
   it("uses an online-feed heartbeat to confirm a stationary arrival", () => {

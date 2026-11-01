@@ -221,6 +221,8 @@ export function transitionMission(
       status: "arrived",
       arrivedAt: now,
       timerEndsAt: now + record.durationMinutes * 60_000,
+      // The owner's tap reveals the place on the overlay, same as GPS arrival.
+      destinationRevealedAt: record.destinationRevealedAt ?? now,
       updatedAt: now,
     }
   }
