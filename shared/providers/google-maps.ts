@@ -241,9 +241,37 @@ async function googleRequest(
       body: JSON.stringify(body),
       signal: controller.signal,
     })
-    if (!response.ok) throw new Error("Google Maps request failed")
+    if (!response.ok) {
+      const text = await response.text().catch(() => "")
+      let providerStatus = "UNKNOWN"
+      let providerMessage = "No provider error details"
+      try {
+        const payload = object(JSON.parse(text))
+        const details = object(payload?.error)
+        if (typeof details?.status === "string") {
+          providerStatus = details.status
+        }
+        if (typeof details?.message === "string") {
+          providerMessage = details.message
+        }
+      } catch {
+        if (text) providerMessage = text
+      }
+      const safeMessage = providerMessage
+        .replaceAll(config.apiKey, "[redacted]")
+        .slice(0, 500)
+      throw new Error(
+        `Google Maps request failed: HTTP ${response.status} ${providerStatus}: ${safeMessage}`
+      )
+    }
     return (await response.json()) as unknown
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.startsWith("Google Maps request failed:")
+    ) {
+      throw error
+    }
     throw new Error("Google Maps request failed")
   } finally {
     clearTimeout(timeout)
@@ -268,7 +296,10 @@ export function createGooglePlacesProvider(
             textQuery: input.query,
             pageSize: 10,
             includePureServiceAreaBusinesses: false,
-            locationRestriction: {
+            // Text Search supports circles only for locationBias. The pitch
+            // processor applies the exact radius and base-zone restrictions
+            // to every returned coordinate before selecting a destination.
+            locationBias: {
               circle: {
                 center: input.origin,
                 radius: input.radiusMeters,

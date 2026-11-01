@@ -7,7 +7,7 @@ import {
 } from "@/shared/providers/google-maps"
 
 describe("Google Maps providers", () => {
-  it("uses a restricted Places search and maps only requested fields", async () => {
+  it("uses a nearby-biased Places search and maps only requested fields", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       Response.json({
         places: [
@@ -68,7 +68,7 @@ describe("Google Maps providers", () => {
       textQuery: "cafe",
       pageSize: 10,
       includePureServiceAreaBusinesses: false,
-      locationRestriction: {
+      locationBias: {
         circle: {
           center: { latitude: 37.77, longitude: -122.42 },
           radius: 2500,
@@ -204,7 +204,9 @@ describe("Google Maps providers", () => {
         origin: { latitude: 1, longitude: 2 },
         radiusMeters: 1000,
       })
-    ).rejects.toThrow("Google Maps request failed")
+    ).rejects.toThrow(
+      "Google Maps request failed: HTTP 500 UNKNOWN: sensitive details"
+    )
 
     const malformed = vi.fn<typeof fetch>(async () => Response.json({}))
     await expect(
