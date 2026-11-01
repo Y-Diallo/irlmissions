@@ -226,7 +226,7 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
   const [now, setNow] = useState(0)
   const photoVersion =
     overlay && "hasPlacePhoto" in overlay && overlay.hasPlacePhoto
-      ? overlay.updatedAt
+      ? (overlay.photoVersion ?? overlay.updatedAt)
       : null
 
   const refresh = useCallback(async () => {

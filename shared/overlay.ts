@@ -4,6 +4,8 @@ import { withoutDashes, type PollRecord } from "@/shared/polls"
 type RevealedPlace = {
   placeName?: string
   hasPlacePhoto?: true
+  /** Stable across timer extensions and other updates to the same mission. */
+  photoVersion?: number
 }
 
 export type OverlayProjection =
@@ -110,6 +112,7 @@ function revealedPlace(mission: MissionRecord): RevealedPlace {
   return {
     placeName: mission.destination.name,
     hasPlacePhoto: true,
+    photoVersion: mission.destinationRevealedAt,
   }
 }
 
@@ -218,7 +221,18 @@ export function toOverlayView(value: unknown): OverlayProjection {
       ? {}
       : {
           placeName: text(input.placeName, 120),
-          ...(input.hasPlacePhoto === true ? { hasPlacePhoto: true } : {}),
+          ...(input.hasPlacePhoto === true
+            ? {
+                hasPlacePhoto: true as const,
+                // Older stored projections predate photoVersion. They can use
+                // updatedAt once; the next mission write publishes the stable
+                // destination-reveal timestamp.
+                photoVersion:
+                  input.photoVersion === undefined
+                    ? updatedAt
+                    : timestamp(input.photoVersion),
+              }
+            : {}),
         }
   if (input.state === "arrived") {
     return {

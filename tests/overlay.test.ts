@@ -188,6 +188,7 @@ describe("public overlay projection", () => {
       timerEndsAt: now + 601_000,
       placeName: "Sample Cafe",
       hasPlacePhoto: true,
+      photoVersion: now + 1000,
     })
   })
 
@@ -221,6 +222,7 @@ describe("public overlay projection", () => {
     expect(projection).toMatchObject({
       placeName: "Sample Cafe",
       hasPlacePhoto: true,
+      photoVersion: now,
     })
     expect(JSON.stringify(projection)).not.toContain("secret-place-id")
   })
