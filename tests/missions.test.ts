@@ -115,6 +115,12 @@ describe("mission state", () => {
     expect(links.googleMaps).toContain("destination=37.78%2C-122.41")
     expect(links.appleMaps).toContain("dirflg=w")
     expect(links.waze).toContain("navigate=yes")
+    const transit = missionNavigation(pitch.destination, "transit")
+    expect(transit.googleMaps).toContain("travelmode=transit")
+    expect(transit.appleMaps).toContain("dirflg=r")
+    const drive = missionNavigation(pitch.destination, "drive")
+    expect(drive.googleMaps).toContain("travelmode=driving")
+    expect(drive.appleMaps).toContain("dirflg=d")
   })
 
   it("accepts only the three owner actions", () => {

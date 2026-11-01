@@ -7,6 +7,7 @@ const MAX_AUTOMATIC_ATTEMPTS = 5
 
 export type Coordinates = { latitude: number; longitude: number }
 export type ProcessingWarning = "stale_location"
+export type TravelMode = "walk" | "transit" | "drive"
 
 export type ProcessingPitch = {
   redemptionId: string
@@ -22,6 +23,7 @@ export type ProcessingContext = {
   baseZone: Coordinates & { radiusMeters: number }
   llmEnabled: boolean
   defaultDurationMinutes: number
+  travelMode: TravelMode
   locationMaxAgeMs?: number
 }
 
@@ -50,7 +52,11 @@ export type PlaceCandidate = Coordinates & {
   attributions: { provider: string; providerUri: string }[]
 }
 
-export type WalkingRoute = { distanceMeters: number; durationSeconds: number }
+export type WalkingRoute = {
+  distanceMeters: number
+  durationSeconds: number
+  mode?: TravelMode
+}
 
 export type DuplicateSuggestion = {
   redemptionId: string
@@ -108,7 +114,11 @@ export type PitchProcessorDependencies = {
     }): Promise<PlaceCandidate[]>
   }
   routes: {
-    walk(origin: Coordinates, destination: Coordinates): Promise<WalkingRoute>
+    walk(
+      origin: Coordinates,
+      destination: Coordinates,
+      mode: TravelMode
+    ): Promise<WalkingRoute>
   }
   duplicates: {
     suggest(input: {
@@ -190,7 +200,8 @@ function validateContext(context: ProcessingContext, now: number) {
     context.baseZone.radiusMeters < 0 ||
     !Number.isInteger(context.defaultDurationMinutes) ||
     context.defaultDurationMinutes < 1 ||
-    context.defaultDurationMinutes > 120
+    context.defaultDurationMinutes > 120 ||
+    !["walk", "transit", "drive"].includes(context.travelMode)
   ) {
     throw new ProcessingError("invalid_settings")
   }
@@ -373,11 +384,18 @@ export async function processPitch(
       return { kind: "rejected", reason: "no_public_place" }
     }
 
-    const walkingRoute = validateRoute(
-      await providerStep("routes_unavailable", () =>
-        deps.routes.walk(context.origin, selected.candidate)
-      )
-    )
+    const walkingRoute = {
+      ...validateRoute(
+        await providerStep("routes_unavailable", () =>
+          deps.routes.walk(
+            context.origin,
+            selected.candidate,
+            context.travelMode
+          )
+        )
+      ),
+      mode: context.travelMode,
+    }
     const duplicateSuggestions = await deps.duplicates.suggest({
       redemptionId: pitch.redemptionId,
       extraction,

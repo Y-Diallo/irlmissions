@@ -179,6 +179,11 @@ export function createPitchContextProvider(db: Firestore, tenantId: string) {
           settings.defaultDurationMinutes,
           "defaultDurationMinutes"
         ),
+        travelMode: ["walk", "transit", "drive"].includes(
+          settings.travelMode
+        )
+          ? settings.travelMode
+          : "walk",
         ...(settings.locationMaxAgeMs === undefined
           ? {}
           : {

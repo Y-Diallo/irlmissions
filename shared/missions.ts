@@ -90,7 +90,15 @@ function validWalkingRoute(value: unknown): WalkingRoute {
   ) {
     throw new MissionError("invalid_mission_route", 500)
   }
-  return value as WalkingRoute
+  const mode = route.mode
+  return {
+    distanceMeters: route.distanceMeters,
+    durationSeconds: route.durationSeconds,
+    mode:
+      mode === "transit" || mode === "drive" || mode === "walk"
+        ? mode
+        : "walk",
+  }
 }
 
 export function createMissionFromWinner(
@@ -186,17 +194,27 @@ export function transitionMission(
   }
 }
 
-export function missionNavigation(destination: PlaceCandidate) {
+export function missionNavigation(
+  destination: PlaceCandidate,
+  mode: "walk" | "transit" | "drive" = "walk"
+) {
   const coordinates = `${destination.latitude},${destination.longitude}`
+  const googleMode =
+    mode === "drive"
+      ? "driving"
+      : mode === "transit"
+        ? "transit"
+        : "walking"
+  const appleMode = mode === "drive" ? "d" : mode === "transit" ? "r" : "w"
   return {
     googleMaps: `https://www.google.com/maps/dir/?${new URLSearchParams({
       api: "1",
       destination: coordinates,
-      travelmode: "walking",
+      travelmode: googleMode,
     })}`,
     appleMaps: `https://maps.apple.com/?${new URLSearchParams({
       daddr: coordinates,
-      dirflg: "w",
+      dirflg: appleMode,
     })}`,
     waze: `https://www.waze.com/ul?${new URLSearchParams({
       ll: coordinates,
@@ -206,5 +224,8 @@ export function missionNavigation(destination: PlaceCandidate) {
 }
 
 export function toMissionOwnerView(record: MissionRecord): MissionOwnerView {
-  return { ...record, navigation: missionNavigation(record.destination) }
+  return {
+    ...record,
+    navigation: missionNavigation(record.destination, record.walkingRoute.mode),
+  }
 }

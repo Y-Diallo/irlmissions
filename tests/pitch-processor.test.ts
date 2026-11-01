@@ -47,6 +47,7 @@ function fixture(rawText = "Eat a sandwich at the cafe") {
     baseZone: { latitude: 37.7, longitude: -122.5, radiusMeters: 100 },
     llmEnabled: true,
     defaultDurationMinutes: 10,
+    travelMode: "walk",
   }
   const providers = createFakePitchProviders()
   const deps: PitchProcessorDependencies = {
@@ -91,6 +92,20 @@ describe("pitch processor", () => {
       extraction: { durationMinutes: 10, riskFlags: [] },
     })
     expect(state.rejected).toBeNull()
+  })
+
+  it("uses and stores the streamer's selected travel mode", async () => {
+    const state = fixture()
+    state.context.travelMode = "drive"
+    await processPitch("redemption-1", state.deps)
+    expect(state.deps.routes.walk).toHaveBeenCalledWith(
+      state.context.origin,
+      expect.objectContaining({ placeId: "fake-place" }),
+      "drive"
+    )
+    expect(state.completed).toMatchObject({
+      walkingRoute: { mode: "drive" },
+    })
   })
 
   it("rejects an AutoMod failure before LLM or Places", async () => {

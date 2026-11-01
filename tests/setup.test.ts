@@ -8,6 +8,7 @@ describe("tenant setup input", () => {
         realtimeIrlPullKey: "private-pull-key",
         searchRadiusMeters: 5000,
         defaultDurationMinutes: 10,
+        travelMode: "transit",
         arrivalRadiusMeters: 50,
         llmEnabled: true,
         baseZone: {
@@ -18,7 +19,11 @@ describe("tenant setup input", () => {
       })
     ).toMatchObject({
       realtimeIrlPullKey: "private-pull-key",
-      settings: { searchRadiusMeters: 5000, llmEnabled: true },
+      settings: {
+        searchRadiusMeters: 5000,
+        llmEnabled: true,
+        travelMode: "transit",
+      },
     })
   })
 
@@ -34,5 +39,14 @@ describe("tenant setup input", () => {
     expect(() => parseSetupAction({ action: "become_other_tenant" })).toThrow(
       "invalid_setup_action"
     )
+    expect(() =>
+      parseSetupUpdate({
+        searchRadiusMeters: 5000,
+        defaultDurationMinutes: 10,
+        arrivalRadiusMeters: 50,
+        travelMode: "fly",
+        baseZone: { latitude: 0, longitude: 0, radiusMeters: 100 },
+      })
+    ).toThrow("invalid_travel_mode")
   })
 })

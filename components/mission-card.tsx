@@ -20,6 +20,12 @@ function distance(meters: number) {
     : `${(meters / 1000).toFixed(1)} km`
 }
 
+function travelLabel(mode: MissionOwnerView["walkingRoute"]["mode"]) {
+  if (mode === "drive") return "driving"
+  if (mode === "transit") return "transit"
+  return "walking"
+}
+
 function countdown(milliseconds: number) {
   const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -95,7 +101,7 @@ export function MissionCard({
           <p className="mt-3 text-sm">
             {distance(mission.walkingRoute.distanceMeters)} ·{" "}
             {Math.max(1, Math.round(mission.walkingRoute.durationSeconds / 60))}{" "}
-            min walk
+            min {travelLabel(mission.walkingRoute.mode)}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
             {mission.destination.hoursText?.[0] ?? "Hours unknown"}

@@ -56,8 +56,8 @@ export function createFakePitchProviders(
       },
     },
     routes: {
-      async walk() {
-        return { distanceMeters: 420, durationSeconds: 360 }
+      async walk(_origin, _destination, mode) {
+        return { distanceMeters: 420, durationSeconds: 360, mode }
       },
     },
     duplicates: {

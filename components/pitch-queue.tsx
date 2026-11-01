@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { PitchReviewItem, ReviewCommand } from "@/shared/pitches/review"
+import type { TravelMode } from "@/shared/pitches/processor"
 import type { PollRecord } from "@/shared/polls"
 import type { MissionAction, MissionOwnerView } from "@/shared/missions"
 
@@ -78,10 +79,16 @@ function StatusBadge({ pitch }: { pitch: PitchReviewItem }) {
   )
 }
 
-function walkingDistance(meters: number) {
+function routeDistance(meters: number) {
   return meters < 1000
-    ? `${Math.round(meters)} m walk`
-    : `${(meters / 1000).toFixed(1)} km walk`
+    ? `${Math.round(meters)} m`
+    : `${(meters / 1000).toFixed(1)} km`
+}
+
+function travelLabel(mode: TravelMode | undefined) {
+  if (mode === "drive") return "driving"
+  if (mode === "transit") return "transit"
+  return "walking"
 }
 
 function PitchCard({
@@ -227,12 +234,12 @@ function PitchCard({
                 {pitch.destination.address}
               </p>
               <p className="mt-2 text-sm">
-                {walkingDistance(pitch.walkingRoute.distanceMeters)} ·{" "}
+                {routeDistance(pitch.walkingRoute.distanceMeters)} ·{" "}
                 {Math.max(
                   1,
                   Math.round(pitch.walkingRoute.durationSeconds / 60)
                 )}{" "}
-                min
+                min {travelLabel(pitch.walkingRoute.mode)}
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
                 {pitch.destination.hoursText?.[0] ?? "Hours unknown"}

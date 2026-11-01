@@ -2,6 +2,7 @@ import type {
   Coordinates,
   PlaceCandidate,
   WalkingRoute,
+  TravelMode,
 } from "@/shared/pitches/processor"
 
 type Fetch = typeof fetch
@@ -339,7 +340,8 @@ export function createGoogleRoutesProvider(
   return {
     async walk(
       origin: Coordinates,
-      destination: Coordinates
+      destination: Coordinates,
+      mode: TravelMode = "walk"
     ): Promise<WalkingRoute> {
       const payload = object(
         await googleRequest(
@@ -348,7 +350,7 @@ export function createGoogleRoutesProvider(
           {
             origin: { location: { latLng: latLng(origin) } },
             destination: { location: { latLng: latLng(destination) } },
-            travelMode: "WALK",
+            travelMode: mode.toUpperCase(),
             computeAlternativeRoutes: false,
           },
           "routes.distanceMeters,routes.duration",
@@ -367,7 +369,11 @@ export function createGoogleRoutesProvider(
       ) {
         throw new Error("Google Routes returned no walking route")
       }
-      return { distanceMeters: distance as number, durationSeconds: duration }
+      return {
+        distanceMeters: distance as number,
+        durationSeconds: duration,
+        mode,
+      }
     },
   }
 }

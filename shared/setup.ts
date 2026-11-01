@@ -42,6 +42,10 @@ export function parseSetupUpdate(value: unknown) {
     throw new SetupError("invalid_base_zone")
   }
   const base = baseZone as Record<string, unknown>
+  const travelMode = input.travelMode ?? "walk"
+  if (!["walk", "transit", "drive"].includes(String(travelMode))) {
+    throw new SetupError("invalid_travel_mode")
+  }
   return {
     realtimeIrlPullKey:
       typeof pullKey === "string" ? pullKey.trim() : (pullKey as null),
@@ -58,6 +62,7 @@ export function parseSetupUpdate(value: unknown) {
         1,
         120
       ),
+      travelMode: travelMode as "walk" | "transit" | "drive",
       llmEnabled: input.llmEnabled === true,
       locationMaxAgeMs: 120_000,
       baseZone: {

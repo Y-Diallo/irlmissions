@@ -173,7 +173,7 @@ describe("Google Maps providers", () => {
     expect(results.map((result) => result.publicAccess)).toEqual([false, false])
   })
 
-  it("requests a walking route without an invalid routing preference", async () => {
+  it("requests the selected route mode without an invalid routing preference", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       Response.json({ routes: [{ distanceMeters: 1234, duration: "612.4s" }] })
     )
@@ -192,14 +192,18 @@ describe("Google Maps providers", () => {
       privateField: "hidden",
     }
     await expect(
-      provider.walk(routeOrigin, routeDestination)
-    ).resolves.toEqual({ distanceMeters: 1234, durationSeconds: 613 })
+      provider.walk(routeOrigin, routeDestination, "transit")
+    ).resolves.toEqual({
+      distanceMeters: 1234,
+      durationSeconds: 613,
+      mode: "transit",
+    })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe(
       "https://routes.googleapis.com/directions/v2:computeRoutes"
     )
     const request = JSON.parse(String(init?.body))
-    expect(request.travelMode).toBe("WALK")
+    expect(request.travelMode).toBe("TRANSIT")
     expect(request.routingPreference).toBeUndefined()
     expect(request.origin.location.latLng).toEqual({
       latitude: 37.77,

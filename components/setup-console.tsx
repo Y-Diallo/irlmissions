@@ -15,6 +15,8 @@ type SetupView = {
   settings: Record<string, unknown> | null
 }
 
+type TravelMode = "walk" | "transit" | "drive"
+
 async function ownerRequest(path: string, init?: RequestInit) {
   const { getBrowserFirebase } = await import("@/lib/firebase/client")
   const user = getBrowserFirebase().auth.currentUser
@@ -34,6 +36,7 @@ export function SetupConsole() {
   const [message, setMessage] = useState("Sign in, then load setup.")
   const [overlayUrl, setOverlayUrl] = useState("")
   const [busy, setBusy] = useState(false)
+  const [travelMode, setTravelMode] = useState<TravelMode>("walk")
 
   async function load() {
     setBusy(true)
@@ -64,6 +67,7 @@ export function SetupConsole() {
           realtimeIrlPullKey: String(form.get("pullKey") ?? "") || undefined,
           searchRadiusMeters: Number(form.get("searchRadiusMeters")),
           defaultDurationMinutes: Number(form.get("defaultDurationMinutes")),
+          travelMode: String(form.get("travelMode") ?? "walk"),
           arrivalRadiusMeters: Number(form.get("arrivalRadiusMeters")),
           llmEnabled: form.get("llmEnabled") === "on",
           baseZone: {
@@ -123,6 +127,15 @@ export function SetupConsole() {
     settings.baseZone && typeof settings.baseZone === "object"
       ? (settings.baseZone as Record<string, unknown>)
       : {}
+
+  useEffect(() => {
+    const saved = view?.settings?.travelMode
+    setTravelMode(
+      saved === "transit" || saved === "drive" || saved === "walk"
+        ? saved
+        : "walk"
+    )
+  }, [view])
 
   return (
     <div className="space-y-6">
@@ -186,6 +199,27 @@ export function SetupConsole() {
           <SetupNumber name="latitude" label="Home latitude" value={base.latitude ?? ""} step="any" />
           <SetupNumber name="longitude" label="Home longitude" value={base.longitude ?? ""} step="any" />
         </div>
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Travel mode</legend>
+          <input type="hidden" name="travelMode" value={travelMode} />
+          <div className="grid grid-cols-3 gap-2" role="group">
+            {(["walk", "transit", "drive"] as const).map((mode) => (
+              <Button
+                key={mode}
+                type="button"
+                className="min-h-12 capitalize"
+                variant={travelMode === mode ? "default" : "outline"}
+                aria-pressed={travelMode === mode}
+                onClick={() => setTravelMode(mode)}
+              >
+                {mode}
+              </Button>
+            ))}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Used for estimates and Google or Apple navigation links.
+          </p>
+        </fieldset>
         <label className="flex min-h-12 items-center gap-3">
           <input name="llmEnabled" type="checkbox" defaultChecked={settings.llmEnabled === true} />
           Use OpenAI pitch cleanup and flags
