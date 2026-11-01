@@ -46,6 +46,10 @@ function object(value: unknown) {
     : null
 }
 
+function latLng(value: Coordinates) {
+  return { latitude: value.latitude, longitude: value.longitude }
+}
+
 function string(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : null
 }
@@ -301,7 +305,7 @@ export function createGooglePlacesProvider(
             // to every returned coordinate before selecting a destination.
             locationBias: {
               circle: {
-                center: input.origin,
+                center: latLng(input.origin),
                 radius: input.radiusMeters,
               },
             },
@@ -342,8 +346,8 @@ export function createGoogleRoutesProvider(
           "https://routes.googleapis.com/directions/v2:computeRoutes",
           config,
           {
-            origin: { location: { latLng: origin } },
-            destination: { location: { latLng: destination } },
+            origin: { location: { latLng: latLng(origin) } },
+            destination: { location: { latLng: latLng(destination) } },
             travelMode: "WALK",
             computeAlternativeRoutes: false,
           },

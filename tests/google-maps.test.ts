@@ -34,10 +34,15 @@ describe("Google Maps providers", () => {
       { apiKey: "google-secret" },
       fetchMock
     )
+    const origin = {
+      latitude: 37.77,
+      longitude: -122.42,
+      observedAt: 123456789,
+    }
     await expect(
       provider.search({
         query: "cafe",
-        origin: { latitude: 37.77, longitude: -122.42 },
+        origin,
         radiusMeters: 2500,
       })
     ).resolves.toEqual([
@@ -75,6 +80,9 @@ describe("Google Maps providers", () => {
         },
       },
     })
+    expect(request.locationBias.circle.center).not.toHaveProperty(
+      "observedAt"
+    )
   })
 
   it("gets fresh photo metadata at reveal time without exposing the API key", async () => {
@@ -173,11 +181,18 @@ describe("Google Maps providers", () => {
       { apiKey: "google-secret" },
       fetchMock
     )
+    const routeOrigin = {
+      latitude: 37.77,
+      longitude: -122.42,
+      observedAt: 123456789,
+    }
+    const routeDestination = {
+      latitude: 37.78,
+      longitude: -122.41,
+      privateField: "hidden",
+    }
     await expect(
-      provider.walk(
-        { latitude: 37.77, longitude: -122.42 },
-        { latitude: 37.78, longitude: -122.41 }
-      )
+      provider.walk(routeOrigin, routeDestination)
     ).resolves.toEqual({ distanceMeters: 1234, durationSeconds: 613 })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe(
@@ -186,6 +201,14 @@ describe("Google Maps providers", () => {
     const request = JSON.parse(String(init?.body))
     expect(request.travelMode).toBe("WALK")
     expect(request.routingPreference).toBeUndefined()
+    expect(request.origin.location.latLng).toEqual({
+      latitude: 37.77,
+      longitude: -122.42,
+    })
+    expect(request.destination.location.latLng).toEqual({
+      latitude: 37.78,
+      longitude: -122.41,
+    })
     expect(init?.headers).toMatchObject({
       "X-Goog-FieldMask": "routes.distanceMeters,routes.duration",
     })
