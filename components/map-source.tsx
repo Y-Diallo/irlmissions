@@ -60,7 +60,6 @@ declare global {
 }
 
 const MIN_TRAIL_DISTANCE_METERS = 8
-const RECAP_DRAW_MS = 2_000
 const RECAP_HOLD_MS = 6_000
 /** One color per poll position, readable on the default map tiles. */
 /** Pin and path opacity while the location feed is quiet. */
@@ -290,7 +289,7 @@ export function MapSource({ overlayId }: { overlayId: string }) {
   const missionKeyRef = useRef<string | undefined>(undefined)
   const cameraKeyRef = useRef<string | undefined>(undefined)
   const recapPlayedRef = useRef(new Set<string>())
-  const animationFrameRef = useRef<number | undefined>(undefined)
+  const historyMarkersRef = useRef<MarkerInstance[]>([])
   const recapTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined
   )
@@ -385,7 +384,7 @@ export function MapSource({ overlayId }: { overlayId: string }) {
     void start()
     return () => {
       stopped = true
-      cancelAnimationFrame(animationFrameRef.current ?? 0)
+      historyMarkersRef.current.forEach((marker) => marker.setMap(null))
       clearTimeout(recapTimerRef.current)
       clearTimeout(fadeTimerRef.current)
       plannedLineRef.current?.setMap(null)
@@ -457,6 +456,11 @@ export function MapSource({ overlayId }: { overlayId: string }) {
       trailLine.setOptions({ strokeOpacity: stale ? STALE_OPACITY : 1 })
     }
 
+    const clearHistory = () => {
+      historyMarkersRef.current.forEach((marker) => marker.setMap(null))
+      historyMarkersRef.current = []
+    }
+
     const hidePositionAndClearTrail = () => {
       positionMarker.setMap(null)
       trailRef.current = []
@@ -465,6 +469,7 @@ export function MapSource({ overlayId }: { overlayId: string }) {
 
     if (projection.state === "idle") {
       clearOptionMarkers()
+      clearHistory()
       destinationMarkerRef.current?.setMap(null)
       plannedLine.setPath([])
       hidePositionAndClearTrail()
@@ -476,6 +481,7 @@ export function MapSource({ overlayId }: { overlayId: string }) {
       const pollKey = projection.pollKey ?? "voting"
       if (pollKeyRef.current !== pollKey) {
         clearOptionMarkers()
+        clearHistory()
         destinationMarkerRef.current?.setMap(null)
         plannedLine.setPath([])
         hidePositionAndClearTrail()
@@ -587,6 +593,62 @@ export function MapSource({ overlayId }: { overlayId: string }) {
       return
     }
 
+    if (projection.state === "recap") {
+      clearOptionMarkers()
+      positionMarker.setMap(null)
+      trailRef.current = []
+      trailLine.setPath([])
+      plannedLine.setPath([])
+      destinationMarkerRef.current?.setMap(null)
+      const history = projection.history?.length
+        ? projection.history
+        : projection.destination
+          ? [
+              {
+                ...projection.destination,
+                label: projection.destination.name,
+                outcome: projection.outcome ?? "completed",
+              },
+            ]
+          : []
+      clearHistory()
+      historyMarkersRef.current = history.map((item, index) => {
+        const latest = index === history.length - 1
+        return new api.Marker({
+          map,
+          position: point(item),
+          title: `${item.label} at ${item.name}`,
+          label: {
+            text: `${item.outcome === "completed" ? "✓" : "✗"} ${item.name}`,
+            className: cn(
+              "map-history-label",
+              `map-history-label--${item.outcome}`,
+              latest && "map-history-label--latest"
+            ),
+          },
+          // The mission that just ended sits on top.
+          zIndex: latest ? 90 : 30 + index,
+        })
+      })
+      const key = projection.missionKey ?? "recap"
+      if (!recapPlayedRef.current.has(key)) {
+        recapPlayedRef.current.add(key)
+        setHiddenRecapKey("")
+        fitPoints(
+          map,
+          api,
+          history.map((item) => point(item))
+        )
+        clearTimeout(recapTimerRef.current)
+        recapTimerRef.current = setTimeout(
+          () => setHiddenRecapKey(key),
+          RECAP_HOLD_MS
+        )
+      }
+      return
+    }
+    clearHistory()
+
     const destination = projection.destination
     if (!destination) return
     const destinationPoint = point(destination)
@@ -612,55 +674,6 @@ export function MapSource({ overlayId }: { overlayId: string }) {
       projection.encodedRoute ? decodePolyline(projection.encodedRoute) : []
     )
 
-    if (projection.state === "recap") {
-      clearOptionMarkers()
-      positionMarker.setMap(null)
-      const key = projection.missionKey ?? "recap"
-      if (!recapPlayedRef.current.has(key)) {
-        recapPlayedRef.current.add(key)
-        setHiddenRecapKey("")
-        const recordedTrail = [...trailRef.current]
-        const route = projection.encodedRoute
-          ? decodePolyline(projection.encodedRoute)
-          : []
-        fitPoints(map, api, [
-          ...(recordedTrail.length ? recordedTrail : route),
-          destinationPoint,
-        ])
-        cancelAnimationFrame(animationFrameRef.current ?? 0)
-        clearTimeout(recapTimerRef.current)
-        const finish = () => {
-          recapTimerRef.current = setTimeout(
-            () => setHiddenRecapKey(key),
-            RECAP_HOLD_MS
-          )
-        }
-        if (!recordedTrail.length) {
-          trailLine.setPath([])
-          finish()
-        } else {
-          trailLine.setPath([])
-          const startedAt = performance.now()
-          const draw = (timestamp: number) => {
-            const progress = Math.min(
-              1,
-              (timestamp - startedAt) / RECAP_DRAW_MS
-            )
-            const count = Math.max(
-              1,
-              Math.ceil(recordedTrail.length * progress)
-            )
-            trailLine.setPath(recordedTrail.slice(0, count))
-            if (progress < 1)
-              animationFrameRef.current = requestAnimationFrame(draw)
-            else finish()
-          }
-          animationFrameRef.current = requestAnimationFrame(draw)
-        }
-      }
-      return
-    }
-
     const missionKey = projection.missionKey ?? "mission"
     if (missionKeyRef.current !== missionKey) {
       const cameFromVoting = !!pollKeyRef.current
@@ -683,10 +696,16 @@ export function MapSource({ overlayId }: { overlayId: string }) {
     }
 
     const current = point(projection.position)
-    const last = trailRef.current.at(-1)
-    if (!last || distanceMeters(last, current) >= MIN_TRAIL_DISTANCE_METERS) {
-      trailRef.current.push(current)
-      trailLine.setPath(trailRef.current)
+    if (projection.state === "arrived") {
+      // Paths are only for travelling.
+      trailRef.current = []
+      trailLine.setPath([])
+    } else {
+      const last = trailRef.current.at(-1)
+      if (!last || distanceMeters(last, current) >= MIN_TRAIL_DISTANCE_METERS) {
+        trailRef.current.push(current)
+        trailLine.setPath(trailRef.current)
+      }
     }
     showPosition(current, !!projection.positionStale)
     // You and the chosen place always share the frame.

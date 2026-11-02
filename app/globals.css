@@ -108,6 +108,7 @@
 
 .map-option-label,
 .map-winner-label,
+.map-history-label,
 .map-position-label {
   width: max-content;
   border: 3px solid #111827;
@@ -164,6 +165,27 @@
 
 .map-option-label--5 {
   border-left-color: #16a34a;
+}
+
+/* Recap pins: every mission finished this stream. */
+.map-history-label {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-history-label--completed {
+  background: #86efac;
+}
+
+.map-history-label--failed {
+  background: #fca5a5;
+}
+
+/* The mission that just ended. */
+.map-history-label--latest {
+  border-width: 4px;
+  font-size: 15px;
 }
 
 .map-winner-label {

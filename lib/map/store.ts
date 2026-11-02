@@ -4,7 +4,12 @@ import type { Firestore } from "firebase-admin/firestore"
 import { isDemoTenant } from "@/shared/auth/demo-owner"
 import { readServerConfig } from "@/shared/config"
 import { eventSubStorageId } from "@/shared/eventsub"
-import { createMapProjection, type MapPitchOption } from "@/shared/map"
+import {
+  createMapProjection,
+  MAP_RECAP_MAX_AGE_MS,
+  type MapHistoryEntry,
+  type MapPitchOption,
+} from "@/shared/map"
 import type { MissionRecord } from "@/shared/missions"
 import type { TravelMode } from "@/shared/pitches/processor"
 import { createFakePitchProviders } from "@/shared/providers/fake-pitch"
@@ -34,6 +39,44 @@ function defaultWalk(tenantId: string): RouteWalker {
   }
   const { routes } = createFakePitchProviders()
   return (origin, destination, mode) => routes.walk(origin, destination, mode)
+}
+
+// Every mission finished (completed or failed, picked or voted) since the
+// last End stream, capped at 12 hours. Denied and canceled ones aren't
+// outcomes, and anywhere missions have no pin.
+async function readRecapHistory(
+  db: Firestore,
+  tenantId: string,
+  recapSince: unknown,
+  now: number
+): Promise<MapHistoryEntry[]> {
+  const since = Math.max(
+    typeof recapSince === "number" ? recapSince : 0,
+    now - MAP_RECAP_MAX_AGE_MS
+  )
+  const snapshot = await db
+    .collection(tenantDoc(tenantId, "pitches"))
+    .where("missionOutcomeAt", ">=", since)
+    .orderBy("missionOutcomeAt")
+    .limit(50)
+    .get()
+  return snapshot.docs.flatMap((document) => {
+    const pitch = document.data() as ReviewRecord & {
+      missionOutcome?: string
+    }
+    const outcome = pitch.reviewStatus
+    if (
+      (outcome !== "completed" && outcome !== "failed") ||
+      pitch.missionOutcome === "denied" ||
+      !pitch.destination ||
+      !pitch.publicLabel
+    ) {
+      return []
+    }
+    return [
+      { label: pitch.publicLabel, outcome, destination: pitch.destination },
+    ]
+  })
 }
 
 export async function readMapProjection(
@@ -76,6 +119,10 @@ export async function readMapProjection(
       }
     }
   )
+  const history =
+    mission?.status === "completed" || mission?.status === "failed"
+      ? await readRecapHistory(db, tenantId, sessionData?.recapSince, now)
+      : []
   const project = (options: MapPitchOption[]) =>
     createMapProjection({
       mission:
@@ -91,6 +138,7 @@ export async function readMapProjection(
           ? settings.data()!.arrivalLocationMaxAgeMs
           : undefined,
       manuallyHidden: settings.data()?.mapCoarseMode === true,
+      history,
     })
   const projection = project(pollOptions)
   // Routes start at the streamer, so fetch them only when the position is

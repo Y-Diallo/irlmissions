@@ -62,6 +62,8 @@ export async function endLiveStream(
   }
 
   const refunds = await createRefundStore(db, tenantId).queueUnused(Date.now())
+  // The next stream's map recap starts from here.
+  await sessionRef.set({ recapSince: Date.now() }, { merge: true })
   return {
     rewardEnabled: false,
     pollCanceled,

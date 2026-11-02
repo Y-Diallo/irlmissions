@@ -38,6 +38,15 @@ export type PublicMapOption = {
   encodedRoute?: string
 }
 
+/** A finished mission this stream, pinned on the recap. */
+export type PublicMapHistoryItem = PublicMapDestination & {
+  label: string
+  outcome: "completed" | "failed"
+}
+
+/** How far back the recap looks when End stream was never pressed. */
+export const MAP_RECAP_MAX_AGE_MS = 12 * 60 * 60_000
+
 export type MapProjection = {
   state: "idle" | "voting" | "heading" | "arrived" | "recap"
   updatedAt: number
@@ -49,7 +58,16 @@ export type MapProjection = {
   positionStale?: true
   options?: PublicMapOption[]
   destination?: PublicMapDestination
+  /** Planned route; only while heading there. */
   encodedRoute?: string
+  /** Recap only: every finished mission this stream, oldest first. */
+  history?: PublicMapHistoryItem[]
+}
+
+export type MapHistoryEntry = {
+  label: string
+  outcome: "completed" | "failed"
+  destination: PlaceCandidate | null
 }
 
 export type MapPitchOption = {
@@ -160,6 +178,8 @@ export function createMapProjection(input: {
   now: number
   locationMaxAgeMs?: number
   manuallyHidden?: boolean
+  /** Finished missions this stream, for the recap. */
+  history?: MapHistoryEntry[]
 }): MapProjection {
   const { mission, poll, now } = input
   const location = publicPosition(
@@ -208,17 +228,32 @@ export function createMapProjection(input: {
       missionKey,
       ...location,
       destination,
-      ...routeGeometry(mission.walkingRoute),
+      // Paths are only for travelling. The planned route starts where the
+      // streamer was, so hiding the live position hides it too.
+      ...(mission.status === "heading" && !input.manuallyHidden
+        ? routeGeometry(mission.walkingRoute)
+        : {}),
     }
   }
   if (mission.status === "completed" || mission.status === "failed") {
+    const history = (input.history ?? []).flatMap((entry) =>
+      entry.destination
+        ? [
+            {
+              ...publicDestination(entry.destination),
+              label: entry.label.slice(0, 25),
+              outcome: entry.outcome,
+            },
+          ]
+        : []
+    )
     return {
       state: "recap",
       updatedAt: now,
       missionKey,
       outcome: mission.status,
       destination,
-      ...routeGeometry(mission.walkingRoute),
+      ...(history.length ? { history } : {}),
     }
   }
   return { state: "idle", updatedAt: now }

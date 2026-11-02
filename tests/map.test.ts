@@ -296,4 +296,65 @@ describe("public map projection", () => {
       )
     ).toBe(true)
   })
+
+  it("draws paths only while travelling, and never while hidden", () => {
+    const heading = createMapProjection({
+      mission: mission(),
+      location: goodLocation,
+      now,
+    })
+    expect(heading.encodedRoute).toBe("encoded-route")
+    expect(
+      createMapProjection({
+        mission: mission(),
+        location: goodLocation,
+        manuallyHidden: true,
+        now,
+      })
+    ).not.toHaveProperty("encodedRoute")
+    expect(
+      createMapProjection({
+        mission: mission({ status: "arrived", timerEndsAt: now + 60_000 }),
+        location: goodLocation,
+        now,
+      })
+    ).not.toHaveProperty("encodedRoute")
+  })
+
+  it("recaps every finished mission this stream as pins, with no path", () => {
+    const projection = createMapProjection({
+      mission: mission({ status: "failed", outcomeAt: now }),
+      location: goodLocation,
+      now,
+      history: [
+        { label: "Win at the cafe", outcome: "completed", destination },
+        {
+          label: "Do 10 jumping jacks",
+          outcome: "completed",
+          destination: null,
+        },
+        {
+          label: "Win at the arcade",
+          outcome: "failed",
+          destination: { ...destination, name: "Arcade", latitude: 47.62 },
+        },
+      ],
+    })
+    expect(projection).toMatchObject({
+      state: "recap",
+      outcome: "failed",
+      history: [
+        {
+          name: "Secret Arcade",
+          label: "Win at the cafe",
+          outcome: "completed",
+        },
+        { name: "Arcade", label: "Win at the arcade", outcome: "failed" },
+      ],
+    })
+    expect(projection).not.toHaveProperty("encodedRoute")
+    expect(projection).not.toHaveProperty("position")
+    expect(JSON.stringify(projection)).not.toContain("Secret address")
+    expect(JSON.stringify(projection)).not.toContain("secret-place")
+  })
 })
