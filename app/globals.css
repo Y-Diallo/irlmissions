@@ -256,6 +256,8 @@
 
 html:has(.overlay-canvas),
 body:has(.overlay-canvas),
+html:has(.map-source),
+body:has(.map-source),
 .overlay-source-page,
 .overlay-source-page body {
   background: transparent !important;
@@ -798,4 +800,20 @@ body:has(.overlay-canvas),
   .show-photo {
     height: 9rem;
   }
+}
+
+/* Demo overlay previews: a checkerboard shows where the overlay is transparent. */
+.demo-overlay-checker {
+  background-color: #d4d4d8;
+  background-image:
+    linear-gradient(45deg, #a1a1aa 25%, transparent 25%),
+    linear-gradient(-45deg, #a1a1aa 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #a1a1aa 75%),
+    linear-gradient(-45deg, transparent 75%, #a1a1aa 75%);
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  background-size: 16px 16px;
 }

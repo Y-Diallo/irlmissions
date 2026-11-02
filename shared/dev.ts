@@ -200,6 +200,7 @@ export type DevAction =
   | { action: "move_toward" }
   | { action: "arrive" }
   | { action: "gps_lost" }
+  | { action: "overlay_links" }
   | { action: "reset" }
 
 export class DevError extends Error {
@@ -239,6 +240,7 @@ export function parseDevAction(value: unknown): DevAction {
     input.action === "move_toward" ||
     input.action === "arrive" ||
     input.action === "gps_lost" ||
+    input.action === "overlay_links" ||
     input.action === "reset"
   ) {
     return { action: input.action }

@@ -10,12 +10,14 @@ import {
   type DemoPresetKey,
   type DevAction,
 } from "@/shared/dev"
+import { automationPreset } from "@/shared/automation"
 import type { MissionRecord } from "@/shared/missions"
 import { tallyOverlay } from "@/shared/overlay"
 import type { PollRecord } from "@/shared/polls"
 import { tenantDoc } from "@/shared/tenant"
 import { runPitchNow } from "@/lib/pitches/runner"
 import { createPollEndStore } from "@/lib/polls/end-store"
+import { createOverlayAccessStore } from "@/lib/overlay/access-store"
 import { createRealtimeIrlStore } from "@/lib/realtimeirl/store"
 
 const DEMO_LOCATION = DEMO_START
@@ -33,11 +35,25 @@ const DEMO_SETTINGS = {
   baseZone: { latitude: 37.7535, longitude: -122.4955, radiusMeters: 150 },
 }
 
+// Full auto with shorter waits so a demo moves along. Only seeded when the
+// demo has no automation yet, so tweaks on /setup survive injected pitches.
+const DEMO_AUTOMATION = {
+  ...automationPreset("full_auto"),
+  vetoSeconds: 15,
+  pollDurationSeconds: 60,
+  postMissionDelaySeconds: 10,
+}
+
 async function seedContext(db: Firestore, tenantId: string, now: number) {
+  const settingsRef = db.doc(tenantDoc(tenantId, "settings/current"))
+  const hasAutomation = (await settingsRef.get()).data()?.automation
   await Promise.all([
-    db
-      .doc(tenantDoc(tenantId, "settings/current"))
-      .set(DEMO_SETTINGS, { merge: true }),
+    settingsRef.set(
+      hasAutomation
+        ? DEMO_SETTINGS
+        : { ...DEMO_SETTINGS, automation: DEMO_AUTOMATION },
+      { merge: true }
+    ),
     db.doc(tenantDoc(tenantId, "privateState/location")).set({
       ...DEMO_LOCATION,
       observedAt: now,
@@ -203,6 +219,13 @@ async function move(
 }
 
 async function reset(db: Firestore, tenantId: string, now: number) {
+  // The overlay key lives outside the tenant; revoke it before wiping.
+  const overlayId = (
+    await db.doc(tenantDoc(tenantId, "private/integrations")).get()
+  ).data()?.overlayId
+  if (typeof overlayId === "string" && overlayId) {
+    await db.doc(`overlayAccess/${overlayId}`).delete()
+  }
   await db.recursiveDelete(db.doc(`owners/${tenantId}`))
   await db.doc(`owners/${tenantId}`).set({
     twitchLogin: "demo_owner",
@@ -229,6 +252,17 @@ export async function runDevAction(
   if (action.action === "end_poll") return endPoll(db, tenantId, now)
   if (action.action === "move_toward") return move(db, tenantId, false, now)
   if (action.action === "arrive") return move(db, tenantId, true, now)
+  if (action.action === "overlay_links") {
+    // A fresh key each time; the demo has no real OBS to keep working.
+    const { overlayId, secret } = await createOverlayAccessStore(db).rotate(
+      tenantId,
+      now
+    )
+    return {
+      overlayUrl: `/overlay/${overlayId}#${secret}`,
+      mapUrl: `/map/${overlayId}#${secret}`,
+    }
+  }
   if (action.action === "gps_lost") {
     await db.doc(tenantDoc(tenantId, "privateState/location")).set(
       {

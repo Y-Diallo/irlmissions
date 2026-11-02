@@ -496,7 +496,14 @@ export function SetupConsole() {
         {overlayUrl && (
           <div className="mt-3 space-y-3">
             <div>
-              <p className="mb-1 text-sm font-medium">Objectives overlay</p>
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium">Objectives overlay</p>
+                <ObsSizeHint
+                  width={760}
+                  height={1080}
+                  placement="Put it at the bottom-left of your canvas. The card sits at the bottom and grows upward with the owed consequences, photo, and timer, so the full height keeps it from being cut off. The rest stays transparent."
+                />
+              </div>
               <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <p className="rounded bg-muted p-3 font-mono text-sm break-all">
                   {overlayUrl}
@@ -514,7 +521,14 @@ export function SetupConsole() {
               </div>
             </div>
             <div>
-              <p className="mb-1 text-sm font-medium">Optional live map</p>
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium">Optional live map</p>
+                <ObsSizeHint
+                  width={640}
+                  height={640}
+                  placement="Put it in a corner. The square map sits at the bottom-right of this source and shrinks away when there's nothing to show."
+                />
+              </div>
               <p className="mb-2 text-sm text-muted-foreground">
                 The map publicly shows exactly where you&apos;re going.
               </p>
@@ -604,6 +618,32 @@ function AutomationToggle({
         )}
       </span>
     </label>
+  )
+}
+
+// Tap-to-open on phones, unlike a hover tooltip.
+function ObsSizeHint({
+  width,
+  height,
+  placement,
+}: {
+  width: number
+  height: number
+  placement: string
+}) {
+  return (
+    <details className="group text-sm">
+      <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-1 rounded-full border px-3 text-muted-foreground select-none hover:bg-muted [&::-webkit-details-marker]:hidden">
+        <span aria-hidden="true">ⓘ</span> OBS size
+      </summary>
+      <div className="mt-2 max-w-md rounded-md border bg-background p-3 shadow-sm">
+        <p>
+          In OBS, add a <strong>Browser</strong> source and set{" "}
+          <strong>Width {width}</strong> and <strong>Height {height}</strong>.
+        </p>
+        <p className="mt-2 text-muted-foreground">{placement}</p>
+      </div>
+    </details>
   )
 }
 
