@@ -54,6 +54,28 @@ describe("RealtimeIRL scoped routes", () => {
     expect(response.headers.get("cache-control")).toBe("no-store")
   })
 
+  it("answers 404, not an outage, when RealtimeIRL isn't set up", async () => {
+    mocks.requireOverlayTenant.mockResolvedValue("demo-owner")
+    mocks.getServerFirebase.mockReturnValueOnce({
+      db: {
+        doc: vi.fn(() => ({
+          get: vi.fn(async () => ({
+            data: () => ({ realtimeIrlPullKey: "" }),
+          })),
+        })),
+      },
+    })
+    const response = await getConfig(
+      new Request("http://localhost/api/realtimeirl/config", {
+        headers: authorization,
+      })
+    )
+    expect(response.status).toBe(404)
+    await expect(response.json()).resolves.toEqual({
+      error: "realtimeirl_not_configured",
+    })
+  })
+
   it("rejects either scoped route before Firebase or secret access", async () => {
     const { OverlayAccessError } = await import("@/shared/overlay-access")
     mocks.requireOverlayTenant.mockRejectedValue(

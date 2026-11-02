@@ -371,7 +371,9 @@ export function MapSource({ overlayId }: { overlayId: string }) {
         positionMarkerRef.current = new api.Marker({
           map: null,
           label: { text: "YOU", className: "map-position-label" },
-          zIndex: 100,
+          // Under the option and winner tags (20+), but still above every
+          // route line, since Google Maps draws lines beneath all markers.
+          zIndex: 10,
         })
         setMapReady(true)
       } catch {

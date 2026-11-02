@@ -396,9 +396,14 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
           },
           cache: "no-store",
         })
+        // No RealtimeIRL key set up: nothing to relay, so no warning.
+        if (response.status === 404) {
+          if (!stopped) setLocationError("")
+          return
+        }
         const body = await response.json()
         if (!response.ok || typeof body.pullKey !== "string") {
-          throw new Error("RealtimeIRL is not configured")
+          throw new Error("RealtimeIRL is unavailable")
         }
         const { subscribeRealtimeIrl } =
           await import("@/lib/realtimeirl/client")
