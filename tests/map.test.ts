@@ -3,6 +3,8 @@ import {
   createMapProjection,
   DEFAULT_MAP_LOCATION_MAX_AGE_MS,
   MAX_MAP_ACCURACY_METERS,
+  POLL_ROUTE_REFRESH_MS,
+  pollRoutesNeedRefresh,
 } from "@/shared/map"
 import type { MissionRecord } from "@/shared/missions"
 import type { PollRecord } from "@/shared/polls"
@@ -193,5 +195,70 @@ describe("public map projection", () => {
         now,
       })
     ).toEqual({ state: "idle", updatedAt: now })
+  })
+
+  it("draws each poll option's route only when the position is public", () => {
+    const input = {
+      mission: null,
+      poll,
+      pollOptions: [
+        { title: "Arcade", votes: 3, destination, route: "route-arcade" },
+        { title: "Cafe", votes: 1, destination },
+      ],
+      now,
+    }
+    const visible = createMapProjection({ ...input, location: goodLocation })
+    expect(visible.options?.[0]?.encodedRoute).toBe("route-arcade")
+    expect(visible.options?.[1]).not.toHaveProperty("encodedRoute")
+    // A route starts at the streamer, so hiding the position hides routes.
+    for (const location of [
+      { ...goodLocation, privacyBlocked: true },
+      { ...goodLocation, feedHeartbeatAt: now - 60_000 },
+      null,
+    ]) {
+      const hidden = createMapProjection({ ...input, location })
+      expect(JSON.stringify(hidden)).not.toContain("route-arcade")
+    }
+    expect(
+      JSON.stringify(
+        createMapProjection({
+          ...input,
+          location: goodLocation,
+          manuallyHidden: true,
+        })
+      )
+    ).not.toContain("route-arcade")
+  })
+
+  it("refetches poll routes per poll and only after real movement", () => {
+    const origin = { latitude: 47.6, longitude: -122.32 }
+    const stored = {
+      attemptId: "attempt-1",
+      origin,
+      routes: { r1: "route" },
+      computedAt: now,
+    }
+    expect(pollRoutesNeedRefresh(null, "attempt-1", origin, now)).toBe(true)
+    expect(pollRoutesNeedRefresh(stored, "attempt-2", origin, now)).toBe(true)
+    const moved = { latitude: 47.6025, longitude: -122.32 } // ~280 m north
+    expect(pollRoutesNeedRefresh(stored, "attempt-1", moved, now + 1000)).toBe(
+      false
+    )
+    expect(
+      pollRoutesNeedRefresh(
+        stored,
+        "attempt-1",
+        origin,
+        now + POLL_ROUTE_REFRESH_MS
+      )
+    ).toBe(false)
+    expect(
+      pollRoutesNeedRefresh(
+        stored,
+        "attempt-1",
+        moved,
+        now + POLL_ROUTE_REFRESH_MS
+      )
+    ).toBe(true)
   })
 })

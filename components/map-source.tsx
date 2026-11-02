@@ -7,6 +7,8 @@ import type {
   MapProjection,
   PublicMapDestination,
 } from "@/shared/map"
+import { leadingIndexes } from "@/shared/polls"
+import { cn } from "@/lib/utils"
 
 type LatLng = { lat: number; lng: number }
 type BoundsInstance = { extend(point: LatLng): void }
@@ -19,6 +21,7 @@ type MapInstance = {
 type PolylineInstance = {
   setPath(path: LatLng[]): void
   setMap(map: MapInstance | null): void
+  setOptions(options: Record<string, unknown>): void
 }
 type MarkerInstance = {
   setPosition(point: LatLng): void
@@ -47,6 +50,14 @@ declare global {
 const MIN_TRAIL_DISTANCE_METERS = 8
 const RECAP_DRAW_MS = 2_000
 const RECAP_HOLD_MS = 6_000
+/** One color per poll position, readable on the default map tiles. */
+const OPTION_ROUTE_COLORS = [
+  "#7c3aed",
+  "#db2777",
+  "#ea580c",
+  "#0891b2",
+  "#16a34a",
+]
 
 function fragmentKey() {
   return decodeURIComponent(window.location.hash.slice(1)).trim()
@@ -137,6 +148,7 @@ export function MapSource({ overlayId }: { overlayId: string }) {
   const trailLineRef = useRef<PolylineInstance | null>(null)
   const plannedLineRef = useRef<PolylineInstance | null>(null)
   const optionMarkersRef = useRef<MarkerInstance[]>([])
+  const optionLinesRef = useRef<PolylineInstance[]>([])
   const destinationMarkerRef = useRef<MarkerInstance | null>(null)
   const positionMarkerRef = useRef<MarkerInstance | null>(null)
   const pollKeyRef = useRef<string | undefined>(undefined)
@@ -244,6 +256,7 @@ export function MapSource({ overlayId }: { overlayId: string }) {
       positionMarkerRef.current?.setMap(null)
       destinationMarkerRef.current?.setMap(null)
       optionMarkersRef.current.forEach((marker) => marker.setMap(null))
+      optionLinesRef.current.forEach((line) => line.setMap(null))
     }
   }, [])
 
@@ -276,6 +289,9 @@ export function MapSource({ overlayId }: { overlayId: string }) {
 
     const clearOptionMarkers = (fade = false) => {
       clearTimeout(fadeTimerRef.current)
+      // Option routes go at once; only the markers fade.
+      optionLinesRef.current.forEach((line) => line.setMap(null))
+      optionLinesRef.current = []
       const markers = optionMarkersRef.current
       if (!fade) {
         markers.forEach((marker) => marker.setMap(null))
@@ -338,11 +354,42 @@ export function MapSource({ overlayId }: { overlayId: string }) {
         marker.setPosition(point(option.destination))
         marker.setLabel({
           text: `${option.position} · ${percentage}% ${option.destination.name}`,
-          className: "map-option-label",
+          // The left edge matches this option's route color.
+          className: cn(
+            "map-option-label",
+            `map-option-label--${((option.position - 1) % OPTION_ROUTE_COLORS.length) + 1}`
+          ),
         })
         marker.setOpacity(1)
         marker.setZIndex(20 + option.position)
         marker.setMap(map)
+      })
+      // Each option's route from the streamer; the leader's is drawn on top.
+      const leaders = totalVotes
+        ? leadingIndexes(options.map((option) => option.votes))
+        : []
+      if (optionLinesRef.current.length !== options.length) {
+        optionLinesRef.current.forEach((line) => line.setMap(null))
+        optionLinesRef.current = options.map(
+          () => new api.Polyline({ map, path: [], geodesic: true })
+        )
+      }
+      options.forEach((option, index) => {
+        const line = optionLinesRef.current[index]!
+        const leading = leaders.includes(index)
+        line.setPath(
+          option.encodedRoute ? decodePolyline(option.encodedRoute) : []
+        )
+        line.setOptions({
+          strokeColor:
+            OPTION_ROUTE_COLORS[
+              (option.position - 1) % OPTION_ROUTE_COLORS.length
+            ],
+          strokeOpacity: leading || !leaders.length ? 0.9 : 0.45,
+          strokeWeight: leading ? 7 : 4,
+          zIndex: leading ? 15 : 10,
+        })
+        line.setMap(map)
       })
       if (projection.position) {
         const current = point(projection.position)

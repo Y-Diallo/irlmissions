@@ -1,9 +1,18 @@
 import type { MissionRecord } from "@/shared/missions"
-import type { PlaceCandidate, WalkingRoute } from "@/shared/pitches/processor"
+import {
+  distanceMeters,
+  type Coordinates,
+  type PlaceCandidate,
+  type WalkingRoute,
+} from "@/shared/pitches/processor"
 import type { PollRecord } from "@/shared/polls"
 
 export const MAX_MAP_ACCURACY_METERS = 50
 export const DEFAULT_MAP_LOCATION_MAX_AGE_MS = 30_000
+/** Poll routes are refetched once the streamer has moved this far... */
+export const POLL_ROUTE_MOVED_METERS = 150
+/** ...and at most this often. */
+export const POLL_ROUTE_REFRESH_MS = 60_000
 
 export type MapPoint = {
   latitude: number
@@ -23,6 +32,8 @@ export type PublicMapOption = {
   title: string
   votes: number
   destination: PublicMapDestination
+  /** Route from the streamer's current location; only with a public position. */
+  encodedRoute?: string
 }
 
 export type MapProjection = {
@@ -41,6 +52,32 @@ export type MapPitchOption = {
   title: string
   votes?: number
   destination: PlaceCandidate | null
+  /** Encoded polyline from the current location, when one was fetched. */
+  route?: string
+}
+
+/** Private: privateState/pollRoutes. */
+export type StoredPollRoutes = {
+  attemptId: string
+  origin: Coordinates
+  /** redemptionId -> encoded polyline */
+  routes: Record<string, string>
+  computedAt: number
+}
+
+// Fetch once per poll, then again only after real movement, so a two-minute
+// poll costs a handful of Routes calls rather than one per map refresh.
+export function pollRoutesNeedRefresh(
+  stored: StoredPollRoutes | null,
+  attemptId: string,
+  origin: Coordinates,
+  now: number
+) {
+  if (!stored || stored.attemptId !== attemptId) return true
+  return (
+    now - stored.computedAt >= POLL_ROUTE_REFRESH_MS &&
+    distanceMeters(stored.origin, origin) >= POLL_ROUTE_MOVED_METERS
+  )
 }
 
 type StoredLocation = Partial<MapPoint> & {
@@ -132,6 +169,11 @@ export function createMapProjection(input: {
               title: option.title.slice(0, 25),
               votes: Math.max(0, option.votes ?? 0),
               destination: publicDestination(option.destination),
+              // A route starts at the streamer, so it is as revealing as the
+              // position itself and only shows when the position does.
+              ...(location.position && option.route
+                ? { encodedRoute: option.route }
+                : {}),
             },
           ]
         : []

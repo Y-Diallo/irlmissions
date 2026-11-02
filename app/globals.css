@@ -131,7 +131,29 @@
 }
 
 .map-option-label {
+  border-left-width: 10px;
   background: #facc15;
+}
+
+/* Same order as OPTION_ROUTE_COLORS in map-source.tsx. */
+.map-option-label--1 {
+  border-left-color: #7c3aed;
+}
+
+.map-option-label--2 {
+  border-left-color: #db2777;
+}
+
+.map-option-label--3 {
+  border-left-color: #ea580c;
+}
+
+.map-option-label--4 {
+  border-left-color: #0891b2;
+}
+
+.map-option-label--5 {
+  border-left-color: #16a34a;
 }
 
 .map-winner-label {
