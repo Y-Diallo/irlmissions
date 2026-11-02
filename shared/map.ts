@@ -9,6 +9,8 @@ import type { PollRecord } from "@/shared/polls"
 
 export const MAX_MAP_ACCURACY_METERS = 50
 export const DEFAULT_MAP_LOCATION_MAX_AGE_MS = 30_000
+/** A dropped feed keeps its last position on the map, greyed, this long. */
+export const MAP_STALE_POSITION_MAX_MS = 15 * 60_000
 /** Poll routes are refetched once the streamer has moved this far... */
 export const POLL_ROUTE_MOVED_METERS = 150
 /** ...and at most this often. */
@@ -43,6 +45,8 @@ export type MapProjection = {
   missionKey?: string
   outcome?: "completed" | "failed"
   position?: MapPoint
+  /** The feed has gone quiet: the position is the last one known. */
+  positionStale?: true
   options?: PublicMapOption[]
   destination?: PublicMapDestination
   encodedRoute?: string
@@ -108,11 +112,11 @@ function publicPosition(
   now: number,
   maxAgeMs: number,
   manuallyHidden: boolean
-): Pick<MapProjection, "position"> {
+): Pick<MapProjection, "position" | "positionStale"> {
   if (manuallyHidden || !location || location.privacyBlocked) return {}
   if (
     typeof location.feedHeartbeatAt !== "number" ||
-    now - location.feedHeartbeatAt > maxAgeMs ||
+    now - location.feedHeartbeatAt > MAP_STALE_POSITION_MAX_MS ||
     typeof location.latitude !== "number" ||
     typeof location.longitude !== "number" ||
     typeof location.observedAt !== "number"
@@ -134,6 +138,11 @@ function publicPosition(
         ? { accuracyMeters: location.accuracyMeters }
         : {}),
     },
+    // Past the live cutoff the map greys the pin and paths rather than
+    // dropping them; privacy reasons above still hide them outright.
+    ...(now - location.feedHeartbeatAt > maxAgeMs
+      ? { positionStale: true as const }
+      : {}),
   }
 }
 

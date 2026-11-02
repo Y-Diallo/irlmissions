@@ -44,6 +44,28 @@ const DEMO_AUTOMATION = {
   postMissionDelaySeconds: 10,
 }
 
+// The simulated GPS feed: the streamer stays wherever they last were (Union
+// Square at first), with fresh timestamps like a live RealtimeIRL feed. A
+// "GPS lost" feed stays lost until the streamer moves again or the demo resets.
+async function refreshLocation(db: Firestore, tenantId: string, now: number) {
+  const locationRef = db.doc(tenantDoc(tenantId, "privateState/location"))
+  const stored = (await locationRef.get()).data()
+  if (stored?.simulatedGpsLost === true) return { gpsLost: true }
+  const latitude = Number(stored?.latitude)
+  const longitude = Number(stored?.longitude)
+  const known = Number.isFinite(latitude) && Number.isFinite(longitude)
+  await locationRef.set({
+    ...(known ? { latitude, longitude } : DEMO_LOCATION),
+    observedAt: now,
+    receivedAt: now,
+    feedHeartbeatAt: now,
+    accuracyMeters: 8,
+    source: "simulator",
+    privacyBlocked: false,
+  })
+  return { gpsLost: false }
+}
+
 async function seedContext(db: Firestore, tenantId: string, now: number) {
   const settingsRef = db.doc(tenantDoc(tenantId, "settings/current"))
   const hasAutomation = (await settingsRef.get()).data()?.automation
@@ -54,15 +76,7 @@ async function seedContext(db: Firestore, tenantId: string, now: number) {
         : { ...DEMO_SETTINGS, automation: DEMO_AUTOMATION },
       { merge: true }
     ),
-    db.doc(tenantDoc(tenantId, "privateState/location")).set({
-      ...DEMO_LOCATION,
-      observedAt: now,
-      receivedAt: now,
-      feedHeartbeatAt: now,
-      accuracyMeters: 8,
-      source: "simulator",
-      privacyBlocked: false,
-    }),
+    refreshLocation(db, tenantId, now),
   ])
 }
 
@@ -246,10 +260,15 @@ export async function runDevAction(
   if (action.action === "inject_pitch") {
     return injectPitch(db, tenantId, action.preset, now)
   }
+  if (action.action === "keep_alive") return refreshLocation(db, tenantId, now)
   if (action.action === "add_vote") {
+    await refreshLocation(db, tenantId, now)
     return addVote(db, tenantId, action.choice, now)
   }
-  if (action.action === "end_poll") return endPoll(db, tenantId, now)
+  if (action.action === "end_poll") {
+    await refreshLocation(db, tenantId, now)
+    return endPoll(db, tenantId, now)
+  }
   if (action.action === "move_toward") return move(db, tenantId, false, now)
   if (action.action === "arrive") return move(db, tenantId, true, now)
   if (action.action === "overlay_links") {
@@ -266,7 +285,9 @@ export async function runDevAction(
   if (action.action === "gps_lost") {
     await db.doc(tenantDoc(tenantId, "privateState/location")).set(
       {
-        feedHeartbeatAt: 0,
+        // Just past the live cutoff: the map greys the last position.
+        feedHeartbeatAt: now - 60_000,
+        simulatedGpsLost: true,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }

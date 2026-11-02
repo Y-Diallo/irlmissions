@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   createMapProjection,
   DEFAULT_MAP_LOCATION_MAX_AGE_MS,
+  MAP_STALE_POSITION_MAX_MS,
   MAX_MAP_ACCURACY_METERS,
   POLL_ROUTE_REFRESH_MS,
   pollRoutesNeedRefresh,
@@ -112,12 +113,46 @@ describe("public map projection", () => {
     expect(JSON.stringify(projection)).not.toContain("private-redemption")
   })
 
+  it("keeps a timed-out position, marked stale, so the map can grey it", () => {
+    const live = createMapProjection({
+      mission: mission(),
+      location: goodLocation,
+      now,
+    })
+    expect(live.position).toBeDefined()
+    expect(live).not.toHaveProperty("positionStale")
+    const quiet = createMapProjection({
+      mission: mission(),
+      location: {
+        ...goodLocation,
+        feedHeartbeatAt: now - DEFAULT_MAP_LOCATION_MAX_AGE_MS - 1,
+      },
+      now,
+    })
+    expect(quiet).toMatchObject({
+      position: { latitude: 47.6, longitude: -122.32 },
+      positionStale: true,
+    })
+    // Privacy still wins over a stale position.
+    expect(
+      createMapProjection({
+        mission: mission(),
+        location: {
+          ...goodLocation,
+          feedHeartbeatAt: now - DEFAULT_MAP_LOCATION_MAX_AGE_MS - 1,
+          privacyBlocked: true,
+        },
+        now,
+      })
+    ).not.toHaveProperty("position")
+  })
+
   it("hides only the position and trail inputs for every privacy reason", () => {
     const cases = [
       { ...goodLocation, privacyBlocked: true },
       {
         ...goodLocation,
-        feedHeartbeatAt: now - DEFAULT_MAP_LOCATION_MAX_AGE_MS - 1,
+        feedHeartbeatAt: now - MAP_STALE_POSITION_MAX_MS - 1,
       },
       { ...goodLocation, accuracyMeters: MAX_MAP_ACCURACY_METERS + 1 },
     ]
@@ -213,7 +248,7 @@ describe("public map projection", () => {
     // A route starts at the streamer, so hiding the position hides routes.
     for (const location of [
       { ...goodLocation, privacyBlocked: true },
-      { ...goodLocation, feedHeartbeatAt: now - 60_000 },
+      { ...goodLocation, feedHeartbeatAt: now - MAP_STALE_POSITION_MAX_MS - 1 },
       null,
     ]) {
       const hidden = createMapProjection({ ...input, location })

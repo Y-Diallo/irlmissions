@@ -18,6 +18,8 @@ describe("emulator dev actions", () => {
       "move_toward",
       "arrive",
       "gps_lost",
+      "keep_alive",
+      "overlay_links",
       "reset",
     ] as const) {
       expect(parseDevAction({ action })).toEqual({ action })

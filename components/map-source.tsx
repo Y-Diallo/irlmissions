@@ -63,6 +63,8 @@ const MIN_TRAIL_DISTANCE_METERS = 8
 const RECAP_DRAW_MS = 2_000
 const RECAP_HOLD_MS = 6_000
 /** One color per poll position, readable on the default map tiles. */
+/** Pin and path opacity while the location feed is quiet. */
+const STALE_OPACITY = 0.4
 const OPTION_ROUTE_COLORS = [
   "#7c3aed",
   "#db2777",
@@ -440,6 +442,21 @@ export function MapSource({ overlayId }: { overlayId: string }) {
       }, 500)
     }
 
+    // A quiet feed greys the pin and the walked trail instead of hiding them.
+    const showPosition = (current: LatLng, stale: boolean) => {
+      positionMarker.setPosition(current)
+      positionMarker.setLabel({
+        text: "YOU",
+        className: cn(
+          "map-position-label",
+          stale && "map-position-label--stale"
+        ),
+      })
+      positionMarker.setOpacity(stale ? STALE_OPACITY : 1)
+      positionMarker.setMap(map)
+      trailLine.setOptions({ strokeOpacity: stale ? STALE_OPACITY : 1 })
+    }
+
     const hidePositionAndClearTrail = () => {
       positionMarker.setMap(null)
       trailRef.current = []
@@ -542,16 +559,16 @@ export function MapSource({ overlayId }: { overlayId: string }) {
             OPTION_ROUTE_COLORS[
               (option.position - 1) % OPTION_ROUTE_COLORS.length
             ],
-          strokeOpacity: leading || !leaders.length ? 0.9 : 0.45,
+          strokeOpacity:
+            (leading || !leaders.length ? 0.9 : 0.45) *
+            (projection.positionStale ? STALE_OPACITY : 1),
           strokeWeight: leading ? 7 : 4,
           zIndex: leading ? 15 : 10,
         })
         line.setMap(map)
       })
       if (projection.position) {
-        const current = point(projection.position)
-        positionMarker.setPosition(current)
-        positionMarker.setMap(map)
+        showPosition(point(projection.position), !!projection.positionStale)
       } else {
         positionMarker.setMap(null)
       }
@@ -671,8 +688,7 @@ export function MapSource({ overlayId }: { overlayId: string }) {
       trailRef.current.push(current)
       trailLine.setPath(trailRef.current)
     }
-    positionMarker.setPosition(current)
-    positionMarker.setMap(map)
+    showPosition(current, !!projection.positionStale)
     // You and the chosen place always share the frame.
     const cameraKey = `mission:${missionKey}:you`
     keepInView(

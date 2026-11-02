@@ -24,8 +24,6 @@ const googleWalk: RouteWalker = (origin, destination, mode) =>
     mode
   )
 
-const DEMO_LOCATION_MAX_AGE_MS = 6 * 60 * 60_000
-
 // The demo account and emulator never call Google; they get scripted routes.
 function defaultWalk(tenantId: string): RouteWalker {
   if (
@@ -88,11 +86,8 @@ export async function readMapProjection(
       pollOptions: options,
       location: location.exists ? location.data()! : null,
       now,
-      // The demo has no live feed to refresh the heartbeat, so its scripted
-      // position stays public until "GPS lost" clears it.
-      locationMaxAgeMs: isDemoTenant(tenantId)
-        ? DEMO_LOCATION_MAX_AGE_MS
-        : typeof settings.data()?.arrivalLocationMaxAgeMs === "number"
+      locationMaxAgeMs:
+        typeof settings.data()?.arrivalLocationMaxAgeMs === "number"
           ? settings.data()!.arrivalLocationMaxAgeMs
           : undefined,
       manuallyHidden: settings.data()?.mapCoarseMode === true,

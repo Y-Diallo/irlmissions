@@ -200,6 +200,7 @@ export type DevAction =
   | { action: "move_toward" }
   | { action: "arrive" }
   | { action: "gps_lost" }
+  | { action: "keep_alive" }
   | { action: "overlay_links" }
   | { action: "reset" }
 
@@ -240,6 +241,7 @@ export function parseDevAction(value: unknown): DevAction {
     input.action === "move_toward" ||
     input.action === "arrive" ||
     input.action === "gps_lost" ||
+    input.action === "keep_alive" ||
     input.action === "overlay_links" ||
     input.action === "reset"
   ) {

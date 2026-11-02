@@ -25,6 +25,8 @@ const presetGroups = [
   { group: "edge", title: "Edge cases" },
 ] as const
 
+const DEMO_FEED_MS = 10_000
+
 export function DevPanel({
   poll,
   mission,
@@ -75,6 +77,32 @@ export function DevPanel({
     const initial = setTimeout(() => void loadLinks(), 0)
     return () => clearTimeout(initial)
   }, [loadLinks])
+
+  // Stands in for the RealtimeIRL feed: keeps the simulated position fresh
+  // (well inside the map's 30s cutoff) while this console is visible.
+  useEffect(() => {
+    const beat = async () => {
+      if (document.visibilityState !== "visible") return
+      try {
+        await fetch("/api/dev", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${await token()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ action: "keep_alive" }),
+        })
+      } catch {
+        // The next beat retries; a missed one only ages the position.
+      }
+    }
+    const initial = setTimeout(() => void beat(), 0)
+    const interval = setInterval(() => void beat(), DEMO_FEED_MS)
+    return () => {
+      clearTimeout(initial)
+      clearInterval(interval)
+    }
+  }, [token])
 
   async function run(action: DevAction) {
     if (action.action === "reset" && !confirmReset) {
