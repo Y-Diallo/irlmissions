@@ -266,7 +266,7 @@ export async function runDevAction(
   if (action.action === "gps_lost") {
     await db.doc(tenantDoc(tenantId, "privateState/location")).set(
       {
-        feedHeartbeatAt: now - 999_999,
+        feedHeartbeatAt: 0,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }

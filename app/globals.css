@@ -127,6 +127,24 @@
   background: #facc15;
 }
 
+/* Which side of its pin a label sits on; it flips away from nearby labels
+   and the map's edges. Mirrors labelRect in map-source.tsx. */
+.map-option-label--above {
+  transform: translateY(-38px);
+}
+
+.map-option-label--below {
+  transform: translateY(42px);
+}
+
+.map-option-label--right {
+  transform: translateX(calc(50% + 16px));
+}
+
+.map-option-label--left {
+  transform: translateX(calc(-50% - 16px));
+}
+
 /* Same order as OPTION_ROUTE_COLORS in map-source.tsx. */
 .map-option-label--1 {
   border-left-color: #7c3aed;
@@ -149,6 +167,9 @@
 }
 
 .map-winner-label {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   background: #86efac;
 }
 

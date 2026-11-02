@@ -16,12 +16,19 @@ type MapInstance = {
   panTo(point: LatLng): void
   setCenter(point: LatLng): void
   setZoom(zoom: number): void
+  getZoom(): number | undefined
   fitBounds(
     bounds: BoundsInstance,
     padding?:
       number | { top: number; right: number; bottom: number; left: number }
   ): void
-  getBounds(): { contains(point: LatLng): boolean } | undefined
+  getBounds():
+    | {
+        contains(point: LatLng): boolean
+        getNorthEast(): { lat(): number; lng(): number }
+        getSouthWest(): { lat(): number; lng(): number }
+      }
+    | undefined
 }
 type PolylineInstance = {
   setPath(path: LatLng[]): void
@@ -84,6 +91,111 @@ function distanceMeters(a: LatLng, b: LatLng) {
   return (
     6_371_000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
   )
+}
+
+/** On-screen geometry of an option label, in pixels (13px bold Arial). */
+const LABEL_CHAR_WIDTH = 7.4
+const LABEL_CHROME_WIDTH = 30
+const LABEL_HEIGHT = 30
+/** Where Google draws a default pin's label: on the pin head, above the tip. */
+const PIN_HEAD_OFFSET = 29
+const LABEL_GAP = 16
+
+export type LabelSide = "above" | "right" | "left" | "below"
+const SIDES: LabelSide[] = ["above", "right", "left", "below"]
+
+type Rect = { left: number; top: number; right: number; bottom: number }
+
+// Web Mercator pixel position at a zoom level, as Google Maps draws it.
+function worldPixel(value: LatLng, zoom: number) {
+  const scale = 256 * 2 ** zoom
+  const sin = Math.sin((value.lat * Math.PI) / 180)
+  return {
+    x: ((value.lng + 180) / 360) * scale,
+    y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale,
+  }
+}
+
+export function labelWidth(text: string) {
+  return text.length * LABEL_CHAR_WIDTH + LABEL_CHROME_WIDTH
+}
+
+// Mirrors the .map-option-label--{side} transforms in globals.css.
+function labelRect(
+  pin: { x: number; y: number },
+  width: number,
+  side: LabelSide
+): Rect {
+  const head = pin.y - PIN_HEAD_OFFSET
+  const center =
+    side === "above"
+      ? { x: pin.x, y: head - 38 }
+      : side === "below"
+        ? { x: pin.x, y: head + 42 }
+        : {
+            x: pin.x + (side === "right" ? 1 : -1) * (width / 2 + LABEL_GAP),
+            y: head,
+          }
+  return {
+    left: center.x - width / 2,
+    right: center.x + width / 2,
+    top: center.y - LABEL_HEIGHT / 2,
+    bottom: center.y + LABEL_HEIGHT / 2,
+  }
+}
+
+function overlap(a: Rect, b: Rect) {
+  const width = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+  const height = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+  return width > 0 && height > 0 ? width * height : 0
+}
+
+function outside(rect: Rect, view: Rect) {
+  const area = (rect.right - rect.left) * (rect.bottom - rect.top)
+  return area - overlap(rect, view)
+}
+
+// Each label takes the first side of its pin (above, right, left, below)
+// that clears the labels already placed and the map's edges; when none is
+// clear, the side that covers the least.
+export function placeOptionLabels(
+  labels: Array<{ point: LatLng; text: string }>,
+  zoom: number,
+  viewport?: { north: number; south: number; east: number; west: number }
+): LabelSide[] {
+  const corner = viewport
+    ? {
+        topLeft: worldPixel({ lat: viewport.north, lng: viewport.west }, zoom),
+        bottomRight: worldPixel(
+          { lat: viewport.south, lng: viewport.east },
+          zoom
+        ),
+      }
+    : null
+  const view: Rect | null = corner
+    ? {
+        left: corner.topLeft.x,
+        top: corner.topLeft.y,
+        right: corner.bottomRight.x,
+        bottom: corner.bottomRight.y,
+      }
+    : null
+  const placed: Rect[] = []
+  return labels.map(({ point: value, text }) => {
+    const pin = worldPixel(value, zoom)
+    const width = labelWidth(text)
+    let best = { side: SIDES[0]!, cost: Infinity, rect: null as Rect | null }
+    for (const side of SIDES) {
+      const rect = labelRect(pin, width, side)
+      const cost =
+        placed.reduce((sum, other) => sum + overlap(rect, other), 0) +
+        (view ? outside(rect, view) : 0)
+      if (cost < best.cost) best = { side, cost, rect }
+      if (cost === 0) break
+    }
+    placed.push(best.rect!)
+    return best.side
+  })
 }
 
 export function decodePolyline(encoded: string): LatLng[] {
@@ -367,18 +479,40 @@ export function MapSource({ overlayId }: { overlayId: string }) {
             })
         )
       }
-      options.forEach((option, index) => {
+      // A label flips to another side of its pin when it would cover a
+      // nearby label or run off the map.
+      const labelText = options.map((option) => {
         const percentage = totalVotes
           ? Math.round((option.votes / totalVotes) * 100)
           : 0
+        return `${option.position} · ${percentage}% ${option.destination.name}`
+      })
+      const view = map.getBounds()
+      const sides = placeOptionLabels(
+        options.map((option, index) => ({
+          point: point(option.destination),
+          text: labelText[index]!,
+        })),
+        map.getZoom() ?? 14,
+        view
+          ? {
+              north: view.getNorthEast().lat(),
+              east: view.getNorthEast().lng(),
+              south: view.getSouthWest().lat(),
+              west: view.getSouthWest().lng(),
+            }
+          : undefined
+      )
+      options.forEach((option, index) => {
         const marker = optionMarkersRef.current[index]!
         marker.setPosition(point(option.destination))
         marker.setLabel({
-          text: `${option.position} · ${percentage}% ${option.destination.name}`,
+          text: labelText[index]!,
           // The left edge matches this option's route color.
           className: cn(
             "map-option-label",
-            `map-option-label--${((option.position - 1) % OPTION_ROUTE_COLORS.length) + 1}`
+            `map-option-label--${((option.position - 1) % OPTION_ROUTE_COLORS.length) + 1}`,
+            `map-option-label--${sides[index]}`
           ),
         })
         marker.setOpacity(1)
