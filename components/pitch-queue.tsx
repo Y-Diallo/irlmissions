@@ -1302,7 +1302,9 @@ export function PitchQueue() {
         </label>
       )}
       {signedIn && demoSession && (
-        <div className="order-5">
+        // Same order as the mode toggles; coming after them in the DOM puts
+        // the demo controls between those and the "Pitch queue" heading.
+        <div className="-order-1">
           <DevPanel
             poll={poll}
             mission={mission}

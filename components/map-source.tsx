@@ -17,6 +17,7 @@ type MapInstance = {
   setCenter(point: LatLng): void
   setZoom(zoom: number): void
   fitBounds(bounds: BoundsInstance, padding?: number): void
+  getBounds(): { contains(point: LatLng): boolean } | undefined
 }
 type PolylineInstance = {
   setPath(path: LatLng[]): void
@@ -138,6 +139,20 @@ function fitPoints(map: MapInstance, api: MapsApi, points: LatLng[]) {
   const bounds = new api.LatLngBounds()
   points.forEach((value) => bounds.extend(value))
   map.fitBounds(bounds, 64)
+}
+
+// Refit when this is a new framing or anything that matters has left view;
+// otherwise hold still so the camera doesn't jitter every refresh.
+function keepInView(
+  map: MapInstance,
+  api: MapsApi,
+  points: LatLng[],
+  changed: boolean
+) {
+  const bounds = map.getBounds()
+  if (changed || !bounds || points.some((value) => !bounds.contains(value))) {
+    fitPoints(map, api, points)
+  }
 }
 
 export function MapSource({ overlayId }: { overlayId: string }) {
@@ -398,14 +413,18 @@ export function MapSource({ overlayId }: { overlayId: string }) {
       } else {
         positionMarker.setMap(null)
       }
-      const cameraKey = `voting:${pollKey}`
-      if (cameraKeyRef.current !== cameraKey) {
-        fitPoints(map, api, [
+      // Reframe once the live position shows up, not just on the first fit.
+      const cameraKey = `voting:${pollKey}:${projection.position ? "you" : "places"}`
+      keepInView(
+        map,
+        api,
+        [
           ...(projection.position ? [point(projection.position)] : []),
           ...options.map((option) => point(option.destination)),
-        ])
-        cameraKeyRef.current = cameraKey
-      }
+        ],
+        cameraKeyRef.current !== cameraKey
+      )
+      cameraKeyRef.current = cameraKey
       return
     }
 
@@ -495,9 +514,11 @@ export function MapSource({ overlayId }: { overlayId: string }) {
 
     if (!projection.position) {
       hidePositionAndClearTrail()
-      if (!cameraKeyRef.current) {
+      // A distinct key so the camera reframes on you once GPS catches up.
+      const cameraKey = `mission:${missionKey}:place`
+      if (cameraKeyRef.current !== cameraKey) {
         fitPoints(map, api, [destinationPoint])
-        cameraKeyRef.current = `mission:${missionKey}`
+        cameraKeyRef.current = cameraKey
       }
       return
     }
@@ -510,13 +531,15 @@ export function MapSource({ overlayId }: { overlayId: string }) {
     }
     positionMarker.setPosition(current)
     positionMarker.setMap(map)
-    const cameraKey = `mission:${missionKey}`
-    if (cameraKeyRef.current !== cameraKey) {
-      fitPoints(map, api, [current, destinationPoint])
-      cameraKeyRef.current = cameraKey
-    } else {
-      map.panTo(current)
-    }
+    // You and the chosen place always share the frame.
+    const cameraKey = `mission:${missionKey}:you`
+    keepInView(
+      map,
+      api,
+      [current, destinationPoint],
+      cameraKeyRef.current !== cameraKey
+    )
+    cameraKeyRef.current = cameraKey
   }, [mapReady, projection])
 
   const recapHidden =
