@@ -46,32 +46,23 @@ function statusLabel(mission: MissionOwnerView) {
 export function MissionCard({
   mission,
   onAction,
-  onPayConsequence,
 }: {
   mission: MissionOwnerView
   onAction: (action: MissionAction) => Promise<void>
-  onPayConsequence: (consequenceId: string) => Promise<void>
 }) {
   const [now, setNow] = useState(mission.updatedAt)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
 
   useEffect(() => {
-    if (
-      mission.status !== "arrived" &&
-      !mission.activeConsequences?.some(
-        (consequence) => consequence.clearRule === "timed"
-      )
-    ) {
-      return
-    }
+    if (mission.status !== "arrived") return
     const initial = setTimeout(() => setNow(Date.now()), 0)
     const interval = setInterval(() => setNow(Date.now()), 1000)
     return () => {
       clearTimeout(initial)
       clearInterval(interval)
     }
-  }, [mission.activeConsequences, mission.status, mission.timerEndsAt])
+  }, [mission.status, mission.timerEndsAt])
 
   async function act(action: MissionAction) {
     setBusy(true)
@@ -89,31 +80,12 @@ export function MissionCard({
     }
   }
 
-  async function pay(consequenceId: string) {
-    setBusy(true)
-    setMessage("")
-    try {
-      await onPayConsequence(consequenceId)
-    } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not mark the consequence paid. Try again."
-      )
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const { destination, walkingRoute, navigation } = mission
   const remaining = (mission.timerEndsAt ?? now) - now
   const terminal =
     mission.status === "completed" ||
     mission.status === "failed" ||
     mission.status === "canceled"
-  const activeConsequences = (mission.activeConsequences ?? []).filter(
-    (consequence) => !consequence.endsAt || consequence.endsAt > now
-  )
 
   return (
     <Card className="border-primary/30 shadow-sm">
@@ -143,33 +115,6 @@ export function MissionCard({
             </p>
           </div>
         )}
-        {activeConsequences.map((consequence) => (
-          <Alert key={consequence.consequenceId}>
-            <AlertTitle>Consequence from {consequence.setBy}</AlertTitle>
-            <AlertDescription className="grid gap-3">
-              <span>{consequence.text}</span>
-              <span className="font-medium">
-                {consequence.clearRule === "timed" && consequence.endsAt
-                  ? `${countdown(consequence.endsAt - now)} left`
-                  : consequence.clearRule === "at_next_stop"
-                    ? "Clears at the next mission arrival."
-                    : consequence.clearRule === "through_next_mission"
-                      ? "Clears when the next mission completes or fails."
-                      : "Stays active until you mark it paid."}
-              </span>
-              {consequence.clearRule === "manual" && (
-                <Button
-                  type="button"
-                  className="min-h-12 w-full text-base sm:w-auto"
-                  disabled={busy}
-                  onClick={() => void pay(consequence.consequenceId)}
-                >
-                  Paid
-                </Button>
-              )}
-            </AlertDescription>
-          </Alert>
-        ))}
         {!destination || !walkingRoute || !navigation ? (
           <div className="rounded-lg bg-muted p-4">
             <p className="text-lg font-semibold">Anywhere</p>

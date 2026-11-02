@@ -8,16 +8,6 @@ import type { PollRecord } from "@/shared/polls"
 export type MissionStatus =
   "heading" | "arrived" | "completed" | "failed" | "canceled"
 
-export type ActiveConsequence = {
-  consequenceId: string
-  text: string
-  clearRule: ConsequenceClearRule
-  sourceMissionId: string
-  setBy: string
-  activatedAt: number
-  endsAt?: number
-}
-
 export type MissionRecord = {
   missionId: string
   lockId: string
@@ -32,14 +22,6 @@ export type MissionRecord = {
   failConsequence?: string
   failConsequenceClearRule?: ConsequenceClearRule
   failConsequenceDurationMinutes?: number
-  /** Owed consequences can overlap until each one's rule clears it. */
-  activeConsequences?: ActiveConsequence[]
-  /** Legacy single-consequence shape, migrated when this session advances. */
-  activeConsequence?: {
-    text: string
-    clearRule: "through_next_mission"
-    sourceMissionId: string
-  }
   status: MissionStatus
   publicLabel: string
   durationMinutes: number
@@ -274,61 +256,6 @@ function missionFromPitch(
   }
 }
 
-export function activeConsequences(record: MissionRecord, now: number) {
-  const current = (record.activeConsequences ?? []).filter(
-    (consequence) => !consequence.endsAt || consequence.endsAt > now
-  )
-  if (current.length || !record.activeConsequence?.text.trim()) return current
-  return [
-    {
-      consequenceId: `legacy:${record.activeConsequence.sourceMissionId}`,
-      text: record.activeConsequence.text.trim().slice(0, 80),
-      clearRule: "through_next_mission" as const,
-      sourceMissionId: record.activeConsequence.sourceMissionId,
-      setBy: record.viewerName ?? "Chat",
-      activatedAt: record.outcomeAt ?? record.updatedAt,
-    },
-  ]
-}
-
-// Carry every still-owed consequence onto the next mission. An anywhere
-// mission is already at its first stop, so at-next-stop debts clear at once.
-export function carryActiveConsequences(
-  next: MissionRecord,
-  previous: MissionRecord | null,
-  now: number
-): MissionRecord {
-  if (!previous) return next
-  const carried = activeConsequences(previous, now).filter(
-    (consequence) =>
-      next.status !== "arrived" || consequence.clearRule !== "at_next_stop"
-  )
-  return carried.length ? { ...next, activeConsequences: carried } : next
-}
-
-export function payManualConsequence(
-  record: MissionRecord,
-  consequenceId: string,
-  now: number
-) {
-  const current = activeConsequences(record, now)
-  const target = current.find(
-    (consequence) => consequence.consequenceId === consequenceId
-  )
-  if (!target) throw new MissionError("consequence_not_found", 404)
-  if (target.clearRule !== "manual") {
-    throw new MissionError("consequence_not_manual")
-  }
-  const next = { ...record, updatedAt: now }
-  delete next.activeConsequence
-  const remaining = current.filter(
-    (consequence) => consequence.consequenceId !== consequenceId
-  )
-  if (remaining.length) next.activeConsequences = remaining
-  else delete next.activeConsequences
-  return next
-}
-
 export function parseMissionAction(value: unknown): MissionAction {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new MissionError("invalid_mission_action", 400)
@@ -347,25 +274,12 @@ export function parseMissionAction(value: unknown): MissionAction {
   return action
 }
 
-export type TransitionOptions = {
-  /**
-   * Clear every consequence still owed from earlier missions when this one
-   * completes or fails, whatever its rule. Rules still apply until then.
-   */
-  capConsequences?: boolean
-}
-
 export function transitionMission(
   record: MissionRecord,
   action: MissionAction,
-  now: number,
-  options: TransitionOptions = {}
+  now: number
 ): MissionRecord {
-  const current = { ...record }
-  delete current.activeConsequence
-  const owed = activeConsequences(record, now)
-  if (owed.length) current.activeConsequences = owed
-  else delete current.activeConsequences
+  const current = record
   if (action === "cancel") {
     if (current.status === "canceled") return record
     if (current.status !== "heading") {
@@ -381,10 +295,7 @@ export function transitionMission(
   if (action === "arrive") {
     if (current.status === "arrived") return record
     if (current.status !== "heading") throw new MissionError("mission_finished")
-    const afterArrival = owed.filter(
-      (consequence) => consequence.clearRule !== "at_next_stop"
-    )
-    const next: MissionRecord = {
+    return {
       ...current,
       status: "arrived",
       arrivedAt: now,
@@ -393,9 +304,6 @@ export function transitionMission(
       destinationRevealedAt: current.destinationRevealedAt ?? now,
       updatedAt: now,
     }
-    if (afterArrival.length) next.activeConsequences = afterArrival
-    else delete next.activeConsequences
-    return next
   }
   if (action === "extend") {
     if (current.status === "heading") {
@@ -427,36 +335,9 @@ export function transitionMission(
   if (current.status !== "arrived") {
     throw new MissionError("mission_not_arrived")
   }
-  const remaining = options.capConsequences
-    ? []
-    : owed.filter(
-        (consequence) => consequence.clearRule !== "through_next_mission"
-      )
-  const activated =
-    action === "fail" && current.failConsequence
-      ? ({
-          consequenceId: `mission:${current.missionId}`,
-          text: current.failConsequence,
-          clearRule: current.failConsequenceClearRule ?? "through_next_mission",
-          sourceMissionId: current.missionId,
-          setBy: current.viewerName ?? "Chat",
-          activatedAt: now,
-          ...((current.failConsequenceClearRule ?? "through_next_mission") ===
-            "timed" && (current.failConsequenceDurationMinutes ?? 0) > 0
-            ? {
-                endsAt: now + current.failConsequenceDurationMinutes! * 60_000,
-              }
-            : {}),
-        } satisfies ActiveConsequence)
-      : null
-  const nextConsequences = [...remaining, ...(activated ? [activated] : [])]
-  const withoutConsequences = { ...current }
-  delete withoutConsequences.activeConsequences
+  // Consequences live in their own collection; see shared/consequences.
   return {
-    ...withoutConsequences,
-    ...(nextConsequences.length
-      ? { activeConsequences: nextConsequences }
-      : {}),
+    ...current,
     status: target,
     ...(action === "deny" ? { outcome: "denied" as const } : {}),
     outcomeAt: now,
@@ -489,15 +370,14 @@ export function missionNavigation(
   }
 }
 
-export function toMissionOwnerView(
-  record: MissionRecord,
-  now = Date.now()
-): MissionOwnerView {
-  const current = { ...record }
+export function toMissionOwnerView(record: MissionRecord): MissionOwnerView {
+  // Legacy consequence fields are dropped rather than migrated.
+  const current: MissionRecord & {
+    activeConsequences?: unknown
+    activeConsequence?: unknown
+  } = { ...record }
+  delete current.activeConsequences
   delete current.activeConsequence
-  const owed = activeConsequences(record, now)
-  if (owed.length) current.activeConsequences = owed
-  else delete current.activeConsequences
   return {
     ...current,
     navigation: current.destination

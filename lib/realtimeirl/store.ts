@@ -1,6 +1,10 @@
 import "server-only"
 
 import { FieldValue, type Firestore } from "firebase-admin/firestore"
+import {
+  readOwedConsequences,
+  settleConsequences,
+} from "@/lib/consequences/store"
 import { missionOverlay } from "@/shared/overlay"
 import {
   evaluateRealtimeIrlArrival,
@@ -55,6 +59,18 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
   )
   const publicStateRef = db.doc(tenantDoc(tenantId, "publicState/current"))
 
+  // Only a heading-to-arrived change touches consequences, so ordinary GPS
+  // samples skip the extra read. Reads must precede the transaction's writes.
+  async function owedOnArrival(
+    tx: FirebaseFirestore.Transaction,
+    before: MissionRecord | null,
+    after: MissionRecord | null | undefined
+  ) {
+    return before?.status === "heading" && after?.status === "arrived"
+      ? readOwedConsequences(tx, db, tenantId)
+      : null
+  }
+
   return {
     record(sample: RealtimeIrlSample, now: number) {
       return db.runTransaction(async (tx) => {
@@ -82,6 +98,11 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
         })
 
         if (!decision.fresh) return decision
+        const owed = await owedOnArrival(
+          tx,
+          missionFrom(sessionSnapshot.data()),
+          decision.mission
+        )
 
         tx.set(locationRef, {
           latitude: sample.latitude,
@@ -103,6 +124,16 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
         if (decision.mission) {
           tx.set(sessionRef, { mission: decision.mission }, { merge: true })
           tx.set(publicStateRef, missionOverlay(decision.mission))
+        }
+        if (owed) {
+          settleConsequences(
+            tx,
+            db,
+            tenantId,
+            owed,
+            { event: { type: "arrived" } },
+            now
+          )
         }
         return decision
       })
@@ -130,6 +161,11 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
           mission: missionFrom(sessionSnapshot.data()),
           confirmation: confirmationFrom(confirmationSnapshot.data()),
         })
+        const owed = await owedOnArrival(
+          tx,
+          missionFrom(sessionSnapshot.data()),
+          decision.mission
+        )
 
         tx.set(
           locationRef,
@@ -147,6 +183,16 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
         if (decision.mission) {
           tx.set(sessionRef, { mission: decision.mission }, { merge: true })
           tx.set(publicStateRef, missionOverlay(decision.mission))
+        }
+        if (owed) {
+          settleConsequences(
+            tx,
+            db,
+            tenantId,
+            owed,
+            { event: { type: "arrived" } },
+            now
+          )
         }
         return decision
       })

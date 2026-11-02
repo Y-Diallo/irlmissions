@@ -12,7 +12,11 @@ import {
 } from "@/shared/automation"
 import { eventSubStorageId, type PendingPollEnd } from "@/shared/eventsub"
 import {
-  carryActiveConsequences,
+  readOwedConsequences,
+  settleConsequences,
+} from "@/lib/consequences/store"
+import type { ConsequenceRecord } from "@/shared/consequences"
+import {
   createMissionFromWinner,
   MissionError,
   type MissionRecord,
@@ -121,6 +125,7 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
         }
 
         const pitchSnapshots = await readPitches(tx, poll)
+        const owed = await readOwedConsequences(tx, db, tenantId)
 
         let resolution
         try {
@@ -144,8 +149,7 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
             resolution,
             pitchSnapshots,
             noTravelMode,
-            now,
-            sessionSnapshot.data()?.mission as MissionRecord | undefined
+            now
           )
         } catch (error) {
           if (!(error instanceof MissionError)) throw error
@@ -167,6 +171,7 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
           mission,
           pitchSnapshots,
           automation,
+          owed,
           now
         )
         const outcome = resolution.winnerRedemptionId
@@ -215,12 +220,12 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
         if (!poll) throw new PollError("poll_not_tied")
         const resolution = resolveTie(poll, redemptionId, now)
         const pitchSnapshots = await readPitches(tx, poll)
+        const owed = await readOwedConsequences(tx, db, tenantId)
         const mission = winningMission(
           resolution,
           pitchSnapshots,
           settings.data()?.noTravelMode === true,
-          now,
-          session.data()?.mission as MissionRecord | undefined
+          now
         )
         writeResolution(
           tx,
@@ -229,6 +234,7 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
           mission,
           pitchSnapshots,
           parseAutomationSettings(settings.data()?.automation),
+          owed,
           now
         )
         return { poll: resolution.poll, mission }
@@ -257,8 +263,7 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
     resolution: PollResolution,
     pitchSnapshots: DocumentSnapshot[],
     noTravelMode: boolean,
-    now: number,
-    previousMission?: MissionRecord
+    now: number
   ) {
     if (!resolution.winnerRedemptionId) return null
     const winner = pitchSnapshots.find(
@@ -267,13 +272,9 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
     )
     if (!winner?.exists) throw new MissionError("winner_not_found", 500)
     const pitch = winner.data()!
-    return carryActiveConsequences(
-      createMissionFromWinner(
-        resolution.poll,
-        noTravelMode ? { ...pitch, noTravel: true } : pitch,
-        now
-      ),
-      previousMission ?? null,
+    return createMissionFromWinner(
+      resolution.poll,
+      noTravelMode ? { ...pitch, noTravel: true } : pitch,
       now
     )
   }
@@ -285,6 +286,7 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
     mission: MissionRecord | null,
     pitchSnapshots: DocumentSnapshot[],
     automation: AutomationSettings,
+    owed: ConsequenceRecord[],
     now: number
   ) {
     // A poll nobody voted in isn't a loss for anyone.
@@ -303,6 +305,19 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
           ? votingOverlay(resolution.poll)
           : idleOverlay(now)
     )
+    if (mission) {
+      // An anywhere mission starts arrived: that's the next stop.
+      settleConsequences(
+        tx,
+        db,
+        tenantId,
+        owed,
+        {
+          event: { type: mission.status === "arrived" ? "arrived" : "sweep" },
+        },
+        now
+      )
+    }
     for (const snapshot of pitchSnapshots) {
       const redemptionId = snapshot.data()?.redemptionId
       if (!snapshot.exists || snapshot.data()?.lockedBy !== lockId) continue

@@ -5,10 +5,12 @@ import { eventSubStorageId } from "@/shared/eventsub"
 import { idleOverlay, missionOverlay } from "@/shared/overlay"
 import type { PollRecord } from "@/shared/polls"
 import {
-  carryActiveConsequences,
+  readOwedConsequences,
+  settleConsequences,
+} from "@/lib/consequences/store"
+import {
   createMissionFromPick,
   MissionError,
-  payManualConsequence,
   toMissionOwnerView,
   transitionMission,
   type MissionAction,
@@ -67,19 +69,27 @@ export function createMissionStore(db: Firestore, tenantId: string) {
             )
           )
         }
-        const mission = carryActiveConsequences(
-          createMissionFromPick(
-            {
-              ...pitch.data(),
-              redemptionId,
-              ...(settings.data()?.noTravelMode === true
-                ? { noTravel: true }
-                : {}),
-            },
-            now,
-            tie?.lockId
-          ),
-          missionFrom(session.data()),
+        const mission = createMissionFromPick(
+          {
+            ...pitch.data(),
+            redemptionId,
+            ...(settings.data()?.noTravelMode === true
+              ? { noTravel: true }
+              : {}),
+          },
+          now,
+          tie?.lockId
+        )
+        const owed = await readOwedConsequences(tx, db, tenantId)
+        // An anywhere mission starts arrived: that's the next stop.
+        settleConsequences(
+          tx,
+          db,
+          tenantId,
+          owed,
+          {
+            event: { type: mission.status === "arrived" ? "arrived" : "sweep" },
+          },
           now
         )
 
@@ -130,10 +140,7 @@ export function createMissionStore(db: Firestore, tenantId: string) {
         ])
         const current = missionFrom(session.data())
         if (!current) throw new MissionError("mission_not_found", 404)
-        const next = transitionMission(current, action, now, {
-          capConsequences: parseAutomationSettings(settings.data()?.automation)
-            .capConsequencesAtNextMissionEnd,
-        })
+        const next = transitionMission(current, action, now)
         if (next === current) return toMissionOwnerView(current)
 
         const canceled = next.status === "canceled"
@@ -151,6 +158,32 @@ export function createMissionStore(db: Firestore, tenantId: string) {
             throw new MissionError("mission_pitch_mismatch")
           }
         }
+        const owed = await readOwedConsequences(tx, db, tenantId)
+        const outcome =
+          action === "complete" || action === "fail" || action === "deny"
+        settleConsequences(
+          tx,
+          db,
+          tenantId,
+          owed,
+          {
+            event:
+              action === "arrive"
+                ? { type: "arrived" }
+                : outcome
+                  ? {
+                      type: "outcome",
+                      missionId: next.missionId,
+                      // A cap, not an override: each rule still applies until
+                      // this outcome, then everything still owed clears.
+                      cap: parseAutomationSettings(settings.data()?.automation)
+                        .capConsequencesAtNextMissionEnd,
+                    }
+                  : { type: "sweep" },
+            ...(action === "fail" ? { failedMission: next } : {}),
+          },
+          now
+        )
 
         tx.set(sessionRef, { mission: next }, { merge: true })
         tx.set(
@@ -174,18 +207,6 @@ export function createMissionStore(db: Firestore, tenantId: string) {
           })
         }
         return toMissionOwnerView(next)
-      })
-    },
-
-    clearManualConsequence(consequenceId: string, now: number) {
-      return db.runTransaction(async (tx) => {
-        const session = await tx.get(sessionRef)
-        const current = missionFrom(session.data())
-        if (!current) throw new MissionError("mission_not_found", 404)
-        const next = payManualConsequence(current, consequenceId, now)
-        tx.set(sessionRef, { mission: next }, { merge: true })
-        tx.set(publicStateRef, missionOverlay(next, now))
-        return toMissionOwnerView(next, now)
       })
     },
   }

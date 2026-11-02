@@ -1,5 +1,9 @@
 import "server-only"
 import type { Firestore } from "firebase-admin/firestore"
+import {
+  parsePublicConsequences,
+  parseRotateSeconds,
+} from "@/shared/consequences"
 import { idleOverlay, OverlayError, toOverlayView } from "@/shared/overlay"
 import { tenantDoc } from "@/shared/tenant"
 
@@ -11,6 +15,19 @@ export function createOverlayStore(db: Firestore, tenantId: string) {
         .doc(tenantDoc(tenantId, "publicState/current"))
         .get()
       return snapshot.exists ? toOverlayView(snapshot.data()) : idleOverlay(now)
+    },
+    // Only the allowlisted public list; never the consequence documents.
+    async readConsequences(now = Date.now()) {
+      const [published, settings] = await Promise.all([
+        db.doc(tenantDoc(tenantId, "publicState/consequences")).get(),
+        db.doc(tenantDoc(tenantId, "settings/current")).get(),
+      ])
+      return {
+        items: parsePublicConsequences(published.data(), now),
+        rotateSeconds: parseRotateSeconds(
+          settings.data()?.consequenceRotateSeconds
+        ),
+      }
     },
     async readRevealedPlaceId() {
       const mission = (await sessionRef.get()).data()?.mission

@@ -11,6 +11,10 @@ import {
   type AutomationSettings,
   type ShortlistOrdering,
 } from "@/shared/automation"
+import {
+  DEFAULT_CONSEQUENCE_ROTATE_SECONDS,
+  parseRotateSeconds,
+} from "@/shared/consequences"
 
 type SetupView = {
   twitchLogin: string | null
@@ -52,6 +56,9 @@ export function SetupConsole() {
   const [automation, setAutomation] = useState<AutomationSettings>(
     DEFAULT_AUTOMATION_SETTINGS
   )
+  const [rotateSeconds, setRotateSeconds] = useState(
+    DEFAULT_CONSEQUENCE_ROTATE_SECONDS
+  )
 
   async function load() {
     setBusy(true)
@@ -70,6 +77,9 @@ export function SetupConsole() {
       )
       setLlmEnabled(loadedSettings.llmEnabled === true)
       setAutomation(parseAutomationSettings(loadedSettings.automation))
+      setRotateSeconds(
+        parseRotateSeconds(loadedSettings.consequenceRotateSeconds)
+      )
       setMessage("")
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Setup unavailable")
@@ -97,6 +107,7 @@ export function SetupConsole() {
           arrivalRadiusMeters: Number(form.get("arrivalRadiusMeters")),
           llmEnabled: form.get("llmEnabled") === "on",
           automation,
+          consequenceRotateSeconds: rotateSeconds,
           baseZone: {
             latitude: Number(form.get("latitude")),
             longitude: Number(form.get("longitude")),
@@ -459,6 +470,13 @@ export function SetupConsole() {
                 capConsequencesAtNextMissionEnd,
               }))
             }
+          />
+          <AutomationNumber
+            label="Overlay consequence page time (seconds)"
+            value={rotateSeconds}
+            min={3}
+            max={30}
+            onChange={setRotateSeconds}
           />
         </section>
         <Button className="min-h-12" disabled={busy} type="submit">

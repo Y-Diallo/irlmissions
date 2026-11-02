@@ -11,17 +11,27 @@ const HEADERS = {
 
 export async function GET(request: Request) {
   try {
-    const [{ requireOverlayTenant }, { getServerFirebase }, { createOverlayStore }] = await Promise.all([
+    const [
+      { requireOverlayTenant },
+      { getServerFirebase },
+      { createOverlayStore },
+    ] = await Promise.all([
       import("@/lib/overlay/access-server"),
       import("@/lib/firebase/admin"),
       import("@/lib/overlay/store"),
     ])
     const tenantId = await requireOverlayTenant(request)
-    const overlay = await createOverlayStore(
-      getServerFirebase().db,
-      tenantId
-    ).read()
-    return NextResponse.json({ overlay }, { headers: HEADERS })
+    const store = createOverlayStore(getServerFirebase().db, tenantId)
+    const now = Date.now()
+    const [overlay, consequences] = await Promise.all([
+      store.read(now),
+      store.readConsequences(now),
+    ])
+    // serverNow lets the overlay count timers on the server's clock.
+    return NextResponse.json(
+      { overlay, consequences, serverNow: now },
+      { headers: HEADERS }
+    )
   } catch (error) {
     if (error instanceof OverlayAccessError || error instanceof OverlayError) {
       return NextResponse.json(

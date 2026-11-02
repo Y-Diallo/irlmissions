@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MissionCard } from "@/components/mission-card"
+import { OwedConsequences } from "@/components/owed-consequences"
 import { DevPanel } from "@/components/dev-panel"
 import {
   Card,
@@ -25,6 +26,10 @@ import type {
 } from "@/shared/pitches/processor"
 import { DEFAULT_POLL_DURATION_SECONDS, type PollRecord } from "@/shared/polls"
 import type { MissionAction, MissionOwnerView } from "@/shared/missions"
+import type {
+  ConsequenceCommand,
+  ConsequenceRecord,
+} from "@/shared/consequences"
 import {
   automationEnabled,
   DEFAULT_AUTOMATION_SETTINGS,
@@ -67,7 +72,8 @@ const errors: Record<string, string> = {
     "Mark the destination as arrived before choosing an outcome.",
   mission_finished: "This mission already has an outcome.",
   consequence_not_found: "That consequence has already cleared.",
-  consequence_not_manual: "This consequence clears automatically.",
+  consequence_cleared: "That consequence has already cleared.",
+  invalid_consequence_duration: "Pick a timer between 1 and 1440 minutes.",
   mission_not_cancelable:
     "This mission has already started. Mark it complete or failed instead.",
   stream_mission_needs_outcome:
@@ -226,8 +232,7 @@ function PitchCard({
   const [confirmRemove, setConfirmRemove] = useState(false)
   const now = useCountdown(pitch.vetoUntil)
   const processingDelayAt =
-    pitch.reviewStatus === "processing" &&
-    pitch.processing?.status !== "error"
+    pitch.reviewStatus === "processing" && pitch.processing?.status !== "error"
       ? pitch.updatedAt + 30_000
       : null
   const processingNow = useCountdown(processingDelayAt)
@@ -787,6 +792,7 @@ export function PitchQueue() {
   const [pitches, setPitches] = useState<PitchReviewItem[]>([])
   const [poll, setPoll] = useState<PollRecord | null>(null)
   const [mission, setMission] = useState<MissionOwnerView | null>(null)
+  const [consequences, setConsequences] = useState<ConsequenceRecord[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [signedIn, setSignedIn] = useState(false)
   const [demoSession, setDemoSession] = useState(false)
@@ -934,6 +940,9 @@ export function PitchQueue() {
       setAutomationPaused(pitchBody.automationPaused === true)
       setPoll(pollBody.poll)
       setMission(missionBody.mission)
+      setConsequences(
+        Array.isArray(missionBody.consequences) ? missionBody.consequences : []
+      )
       setSelected((current) => {
         const selectable = new Set(
           nextPitches
@@ -1141,24 +1150,26 @@ export function PitchQueue() {
     await refresh()
   }
 
-  async function payConsequence(consequenceId: string) {
-    const response = await fetch("/api/missions", {
-      method: "DELETE",
+  async function consequenceCommand(
+    consequenceId: string,
+    command: ConsequenceCommand
+  ) {
+    const response = await fetch("/api/consequences", {
+      method: "PATCH",
       headers: {
         Authorization: `Bearer ${await token()}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ consequenceId }),
+      body: JSON.stringify({ consequenceId, ...command }),
     })
     const result = await response.json()
     if (!response.ok) {
       const code = result.error ?? "unavailable"
       throw new Error(
-        errors[code] ?? "Could not mark the consequence paid. Try again."
+        errors[code] ?? "Could not update the consequence. Try again."
       )
     }
-    setMission(result.mission)
-    await refresh()
+    setConsequences(result.consequences)
   }
 
   const pollInProgress =
@@ -1302,10 +1313,14 @@ export function PitchQueue() {
       )}
       {signedIn && mission && (
         <div className="order-1">
-          <MissionCard
-            mission={mission}
-            onAction={missionAction}
-            onPayConsequence={payConsequence}
+          <MissionCard mission={mission} onAction={missionAction} />
+        </div>
+      )}
+      {signedIn && consequences.length > 0 && (
+        <div className="order-1">
+          <OwedConsequences
+            consequences={consequences}
+            onCommand={consequenceCommand}
           />
         </div>
       )}

@@ -192,85 +192,34 @@ describe("public overlay projection", () => {
     })
   })
 
-  it("shows an active consequence throughout its clearing mission", () => {
-    const withPenalty: MissionRecord = {
-      ...mission,
-      activeConsequences: [
-        {
-          consequenceId: "consequence-1",
-          text: "Eat a lemon",
-          clearRule: "through_next_mission",
-          sourceMissionId: "previous-mission",
-          setBy: "CoolViewer",
-          activatedAt: now - 1000,
-        },
-      ],
-    }
-    expect(missionOverlay(withPenalty)).toMatchObject({
-      consequences: [
-        {
-          consequenceId: "consequence-1",
-          text: "Eat a lemon",
-          clearRule: "through_next_mission",
-          setBy: "CoolViewer",
-        },
-      ],
-    })
-    expect(
-      missionOverlay({
-        ...withPenalty,
-        status: "arrived",
-        timerEndsAt: now + 60_000,
-      })
-    ).toMatchObject({ consequences: [{ text: "Eat a lemon" }] })
-    expect(
-      toOverlayView({
-        state: "heading",
-        updatedAt: now,
-        objective: "Go",
-        chosenBy: "Chat",
-        consequences: [
-          {
-            consequenceId: "consequence-1",
-            text: "Eat a lemon",
-            setBy: "CoolViewer",
-            clearRule: "through_next_mission",
-          },
-        ],
-      })
-    ).toMatchObject({
-      consequences: [
-        {
-          text: "Eat a lemon",
-          setBy: "CoolViewer",
-          clearRule: "through_next_mission",
-        },
-      ],
-    })
-  })
-
-  it("clears a stored timed consequence at endsAt after a reload", () => {
-    const stored = {
+  it("drops legacy consequence fields; they have their own public list", () => {
+    const view = toOverlayView({
       state: "heading",
       updatedAt: now,
       objective: "Go",
       chosenBy: "Chat",
+      consequence: "Eat a lemon",
       consequences: [
         {
-          consequenceId: "timed-1",
-          text: "Use a pirate voice",
+          consequenceId: "consequence-1",
+          text: "Eat a lemon",
           setBy: "CoolViewer",
-          clearRule: "timed",
-          endsAt: now + 600_000,
+          clearRule: "through_next_mission",
         },
       ],
-    }
-    expect(toOverlayView(stored, now + 599_999)).toMatchObject({
-      consequences: [{ consequenceId: "timed-1" }],
     })
-    expect(toOverlayView(stored, now + 600_000)).not.toHaveProperty(
-      "consequences"
-    )
+    expect(view).toEqual({
+      state: "heading",
+      updatedAt: now,
+      objective: "Go",
+      chosenBy: "Chat",
+    })
+    expect(
+      missionOverlay({
+        ...mission,
+        activeConsequences: [{ text: "Eat a lemon" }],
+      } as MissionRecord)
+    ).not.toHaveProperty("consequences")
   })
 
   it("publishes only photo availability after reveal", () => {

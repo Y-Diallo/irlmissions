@@ -1,6 +1,12 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useReducer, useRef, useState } from "react"
+import { ConsequenceStrip } from "@/components/consequence-strip"
+import { EMPTY_STRIP, stripReducer } from "@/shared/consequence-strip"
+import {
+  DEFAULT_CONSEQUENCE_ROTATE_SECONDS,
+  parseRotateSeconds,
+} from "@/shared/consequences"
 import type { OverlayProjection } from "@/shared/overlay"
 import { leadingIndexes } from "@/shared/polls"
 import type { RealtimeIrlLocation } from "@/lib/realtimeirl/client"
@@ -21,22 +27,6 @@ function fragmentKey() {
 function timer(milliseconds: number) {
   const total = Math.max(0, Math.ceil(milliseconds / 1000))
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`
-}
-
-function consequenceStatus(
-  consequence: NonNullable<
-    Extract<OverlayProjection, { state: "heading" }>["consequences"]
-  >[number],
-  now: number
-) {
-  if (consequence.clearRule === "timed" && consequence.endsAt) {
-    return `${timer(consequence.endsAt - now)} left`
-  }
-  if (consequence.clearRule === "at_next_stop") return "Pay at next stop"
-  if (consequence.clearRule === "through_next_mission") {
-    return "Until next mission ends"
-  }
-  return "Until streamer marks paid"
 }
 
 type PhotoAttribution = {
@@ -116,9 +106,6 @@ function Card({
   const heading = overlay.state === "heading"
   const photoVisible = Boolean(photo.uri && "hasPlacePhoto" in overlay)
   const displayNow = now || overlay.updatedAt
-  const consequences = (overlay.consequences ?? []).filter(
-    (consequence) => !consequence.endsAt || consequence.endsAt > displayNow
-  )
   return (
     <div
       className={`show-card show-card--${overlay.state} ${photoVisible ? "show-card--photo" : ""}`}
@@ -203,17 +190,6 @@ function Card({
         )}
         <p className="show-label">CURRENT OBJECTIVE</p>
         <h1 className="show-objective">{overlay.objective}</h1>
-        {consequences.length > 0 && (
-          <div className="show-consequences">
-            {consequences.map((consequence) => (
-              <div className="show-consequence" key={consequence.consequenceId}>
-                <span>OWED BY {consequence.setBy}</span>
-                <strong>{consequence.text}</strong>
-                <small>{consequenceStatus(consequence, displayNow)}</small>
-              </div>
-            ))}
-          </div>
-        )}
         {"placeName" in overlay && overlay.placeName && (
           <p className="show-place">
             <span>DESTINATION</span>
@@ -239,11 +215,9 @@ function Card({
             Streamer denied this mission. No consequence added.
           </p>
         )}
-        {overlay.state === "failed" &&
-          !overlay.denied &&
-          consequences.length === 0 && (
-            <p className="show-result-message">Challenge failed.</p>
-          )}
+        {overlay.state === "failed" && !overlay.denied && (
+          <p className="show-result-message">Challenge failed.</p>
+        )}
       </div>
     </div>
   )
@@ -260,6 +234,12 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
     googleMapsUri?: string
   }>({ version: 0, uri: "", attributions: [] })
   const [now, setNow] = useState(0)
+  const [strip, dispatchStrip] = useReducer(stripReducer, EMPTY_STRIP)
+  const [rotateSeconds, setRotateSeconds] = useState(
+    DEFAULT_CONSEQUENCE_ROTATE_SECONDS
+  )
+  // Server clock minus this browser's, so every timer runs on server time.
+  const clockOffset = useRef(0)
   const photoVersion =
     overlay && "hasPlacePhoto" in overlay && overlay.hasPlacePhoto
       ? (overlay.photoVersion ?? overlay.updatedAt)
@@ -287,7 +267,18 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
             : "Overlay data is temporarily unavailable."
         )
       }
+      if (typeof body.serverNow === "number") {
+        clockOffset.current = body.serverNow - Date.now()
+      }
       setOverlay(body.overlay)
+      dispatchStrip({
+        type: "sync",
+        items: Array.isArray(body.consequences?.items)
+          ? body.consequences.items
+          : [],
+        now: Date.now() + clockOffset.current,
+      })
+      setRotateSeconds(parseRotateSeconds(body.consequences?.rotateSeconds))
       setError("")
     } catch (failure) {
       setError(
@@ -439,7 +430,13 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
     document.documentElement.classList.add("overlay-source-page")
     const initialRefresh = setTimeout(() => void refresh(), 0)
     const dataInterval = setInterval(() => void refresh(), 2000)
-    const timerInterval = setInterval(() => setNow(Date.now()), 1000)
+    // Timers are absolute server timestamps, so a hidden source that stops
+    // ticking shows the right time again as soon as it resumes.
+    const timerInterval = setInterval(() => {
+      const serverNow = Date.now() + clockOffset.current
+      setNow(serverNow)
+      dispatchStrip({ type: "tick", now: serverNow })
+    }, 1000)
     return () => {
       document.documentElement.classList.remove("overlay-source-page")
       clearTimeout(initialRefresh)
@@ -451,15 +448,23 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
   return (
     <main className="overlay-canvas">
       {overlay ? (
-        <Card
-          overlay={overlay}
-          now={now}
-          photo={
-            photo.version === photoVersion
-              ? photo
-              : { uri: "", attributions: [] }
-          }
-        />
+        <div className="show-stack">
+          <ConsequenceStrip
+            state={strip}
+            dispatch={dispatchStrip}
+            rotateSeconds={rotateSeconds}
+            now={now}
+          />
+          <Card
+            overlay={overlay}
+            now={now}
+            photo={
+              photo.version === photoVersion
+                ? photo
+                : { uri: "", attributions: [] }
+            }
+          />
+        </div>
       ) : error ? (
         <div className="show-card show-card--error">
           <p className="show-kicker">OVERLAY SETUP</p>

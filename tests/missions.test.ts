@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest"
+import { consequenceFromFailure } from "@/shared/consequences"
 import {
-  activeConsequences,
-  carryActiveConsequences,
   createMissionFromWinner,
   missionNavigation,
-  payManualConsequence,
   parseMissionAction,
   toMissionOwnerView,
   transitionMission,
@@ -174,136 +172,11 @@ describe("mission state", () => {
       outcome: "denied",
       outcomeAt: now + 2000,
     })
-    expect(denied.activeConsequences).toBeUndefined()
+    expect(consequenceFromFailure(denied, "key-1234", now)).toBeNull()
     expect(missionOverlay(denied)).toMatchObject({
       state: "failed",
       denied: true,
     })
-  })
-
-  function failedWith(
-    clearRule: "timed" | "at_next_stop" | "through_next_mission" | "manual",
-    durationMinutes = 0
-  ) {
-    const first: MissionRecord = {
-      ...mission(),
-      viewerName: "Pitcher",
-      failConsequence: "Use a pirate voice",
-      failConsequenceClearRule: clearRule,
-      failConsequenceDurationMinutes: durationMinutes,
-    }
-    const failed = transitionMission(
-      transitionMission(first, "arrive", now + 1000),
-      "fail",
-      now + 2000
-    )
-    expect(failed.activeConsequences?.[0]).toMatchObject({
-      text: "Use a pirate voice",
-      clearRule,
-      setBy: "Pitcher",
-    })
-    return failed
-  }
-
-  function nextMission(previous: MissionRecord) {
-    return carryActiveConsequences(
-      { ...mission(), missionId: "next-mission", lockId: "next-lock" },
-      previous,
-      now + 3000
-    )
-  }
-
-  it("clears a timed consequence at its server-derived end timestamp", () => {
-    const failed = failedWith("timed", 10)
-    const endsAt = now + 2000 + 10 * 60_000
-    expect(failed.activeConsequences?.[0]).toMatchObject({ endsAt })
-    expect(activeConsequences(failed, endsAt - 1)).toHaveLength(1)
-    expect(activeConsequences(failed, endsAt)).toHaveLength(0)
-    expect(missionOverlay(failed, endsAt)).not.toHaveProperty("consequences")
-  })
-
-  it("clears an at-next-stop consequence on the following arrival", () => {
-    const failed = failedWith("at_next_stop")
-    const next = nextMission(failed)
-    expect(next.activeConsequences).toHaveLength(1)
-    const arrived = transitionMission(next, "arrive", now + 4000)
-    expect(arrived.activeConsequences).toBeUndefined()
-    const anywhere = carryActiveConsequences(
-      {
-        ...mission(),
-        missionId: "anywhere-mission",
-        lockId: "anywhere-lock",
-        status: "arrived",
-        destination: null,
-        walkingRoute: null,
-        arrivedAt: now + 3000,
-        timerEndsAt: now + 603_000,
-      },
-      failed,
-      now + 3000
-    )
-    expect(anywhere.activeConsequences).toBeUndefined()
-  })
-
-  it("clears a through-next-mission consequence on its outcome", () => {
-    const next = nextMission(failedWith("through_next_mission"))
-    expect(missionOverlay(next)).toMatchObject({
-      consequences: [
-        expect.objectContaining({ clearRule: "through_next_mission" }),
-      ],
-    })
-    const arrived = transitionMission(next, "arrive", now + 4000)
-    expect(arrived.activeConsequences).toHaveLength(1)
-    const completed = transitionMission(arrived, "complete", now + 5000)
-    expect(completed.activeConsequences).toBeUndefined()
-  })
-
-  it("caps every owed consequence at the next mission's outcome when enabled", () => {
-    const timed = nextMission(failedWith("timed", 120))
-    const arrived = transitionMission(timed, "arrive", now + 4000, {
-      capConsequences: true,
-    })
-    // The cap is not an override: the timer still runs until the outcome.
-    expect(arrived.activeConsequences).toHaveLength(1)
-    expect(
-      transitionMission(arrived, "complete", now + 5000, {
-        capConsequences: true,
-      }).activeConsequences
-    ).toBeUndefined()
-
-    const manual = transitionMission(
-      nextMission(failedWith("manual")),
-      "arrive",
-      now + 4000
-    )
-    const failed = transitionMission(manual, "fail", now + 5000, {
-      capConsequences: true,
-    })
-    // Only this mission's own new consequence remains.
-    expect(failed.activeConsequences).toBeUndefined()
-    expect(
-      transitionMission(manual, "complete", now + 5000).activeConsequences
-    ).toHaveLength(1)
-  })
-
-  it("keeps a manual consequence until the owner marks it paid", () => {
-    const next = nextMission(failedWith("manual"))
-    const completed = transitionMission(
-      transitionMission(next, "arrive", now + 4000),
-      "complete",
-      now + 5000
-    )
-    expect(completed.activeConsequences).toHaveLength(1)
-    const consequenceId = completed.activeConsequences![0]!.consequenceId
-    const paid = payManualConsequence(completed, consequenceId, now + 6000)
-    expect(paid.activeConsequences).toBeUndefined()
-    expect(() =>
-      payManualConsequence(
-        nextMission(failedWith("at_next_stop")),
-        `mission:${mission().missionId}`,
-        now + 3500
-      )
-    ).toThrow("consequence_not_manual")
   })
 
   it("cancels only before arrival", () => {

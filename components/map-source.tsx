@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { motion } from "motion/react"
 import type {
   MapPoint,
   MapProjection,
@@ -487,8 +488,20 @@ export function MapSource({ overlayId }: { overlayId: string }) {
 
   return (
     <main className="map-source">
-      <div
-        className={`map-source__card${visible ? "map-source__card--visible" : ""}`}
+      {/* Stays mounted: the Google Map lives inside, so only scale it. */}
+      <motion.div
+        className="map-source__card"
+        initial={false}
+        animate={visible ? { scale: 1, opacity: 1 } : { scale: 0, opacity: 0 }}
+        transition={{
+          scale: visible
+            ? { type: "spring", stiffness: 260, damping: 18 }
+            : { duration: 0.32, ease: [0.6, 0, 0.8, 0.2] },
+          opacity: {
+            duration: visible ? 0.12 : 0.2,
+            delay: visible ? 0 : 0.14,
+          },
+        }}
       >
         <div ref={elementRef} className="map-source__canvas" />
         {visible && (
@@ -498,7 +511,7 @@ export function MapSource({ overlayId }: { overlayId: string }) {
           </div>
         )}
         {error && <div className="map-source__warning">{error}</div>}
-      </div>
+      </motion.div>
     </main>
   )
 }

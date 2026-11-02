@@ -1,4 +1,5 @@
 import { parseAutomationSettings } from "@/shared/automation"
+import { parseRotateSeconds } from "@/shared/consequences"
 
 export class SetupError extends Error {
   constructor(
@@ -67,6 +68,9 @@ export function parseSetupUpdate(value: unknown) {
       travelMode: travelMode as "walk" | "transit" | "drive",
       llmEnabled: input.llmEnabled === true,
       automation: parseAutomationSettings(input.automation),
+      consequenceRotateSeconds: parseRotateSeconds(
+        input.consequenceRotateSeconds
+      ),
       locationMaxAgeMs: 120_000,
       baseZone: {
         latitude: number(base.latitude, "invalid_base_zone", -90, 90),

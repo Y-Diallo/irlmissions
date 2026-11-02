@@ -3,13 +3,17 @@ const mocks = vi.hoisted(() => ({
   getServerFirebase: vi.fn(() => ({ db: { synthetic: true } })),
   requireOverlayTenant: vi.fn(),
   read: vi.fn(),
+  readConsequences: vi.fn(),
 }))
 
 vi.mock("@/lib/firebase/admin", () => ({
   getServerFirebase: mocks.getServerFirebase,
 }))
 vi.mock("@/lib/overlay/store", () => ({
-  createOverlayStore: () => ({ read: mocks.read }),
+  createOverlayStore: () => ({
+    read: mocks.read,
+    readConsequences: mocks.readConsequences,
+  }),
 }))
 vi.mock("@/lib/overlay/access-server", () => ({
   requireOverlayTenant: mocks.requireOverlayTenant,
@@ -34,6 +38,17 @@ describe("overlay read route", () => {
       objective: "Go",
       chosenBy: "Chat",
     })
+    mocks.readConsequences.mockResolvedValue({
+      items: [
+        {
+          key: "key-0001-abcd",
+          text: "Eat a lemon",
+          setBy: "V",
+          clearRule: "manual",
+        },
+      ],
+      rotateSeconds: 6,
+    })
     const response = await GET(
       new Request(url, { headers: { authorization: `Bearer ${key}` } })
     )
@@ -45,6 +60,18 @@ describe("overlay read route", () => {
         objective: "Go",
         chosenBy: "Chat",
       },
+      consequences: {
+        items: [
+          {
+            key: "key-0001-abcd",
+            text: "Eat a lemon",
+            setBy: "V",
+            clearRule: "manual",
+          },
+        ],
+        rotateSeconds: 6,
+      },
+      serverNow: expect.any(Number),
     })
     expect(response.headers.get("cache-control")).toBe("no-store")
   })
