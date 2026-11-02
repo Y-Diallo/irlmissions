@@ -73,7 +73,7 @@ export function DemoOverlays({
     )
   }
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
+    <div className="grid gap-5">
       <OverlayFrame title="Objectives overlay" src={links.overlayUrl} />
       <OverlayFrame title="Live map" src={links.mapUrl} />
     </div>
