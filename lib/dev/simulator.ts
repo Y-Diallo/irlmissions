@@ -165,7 +165,7 @@ async function addVote(
       },
       now
     )
-    tx.set(sessionRef, { poll: next }, { merge: true })
+    tx.set(sessionRef, { poll: next }, { mergeFields: ["poll"] })
     if (projection) tx.set(publicRef, projection)
     return { poll: next }
   })

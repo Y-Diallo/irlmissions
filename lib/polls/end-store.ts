@@ -295,7 +295,9 @@ export function createPollEndStore(db: Firestore, tenantId: string) {
     tx.set(
       sessionRef,
       { poll: resolution.poll, ...(mission ? { mission } : {}) },
-      { merge: true }
+      // Whole fields: a deep merge would carry the last mission's leftovers
+      // (arrival, reveal, timer) into this one.
+      { mergeFields: mission ? ["poll", "mission"] : ["poll"] }
     )
     tx.set(
       publicStateRef,

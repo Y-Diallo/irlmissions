@@ -55,7 +55,7 @@ export function createEventSubStore(
         if (write.kind === "poll_progress") {
           const tally = await readTally(tx, write.tally, false)
           if (!tally) return "ignored"
-          tx.set(sessionRef, { poll: tally.poll }, { merge: true })
+          tx.set(sessionRef, { poll: tally.poll }, { mergeFields: ["poll"] })
           if (tally.projection) tx.set(publicStateRef, tally.projection)
           return "tallied"
         }
@@ -93,7 +93,7 @@ export function createEventSubStore(
           if (pollExists) return "duplicate-poll"
           tx.create(pollRef, write.poll)
           if (tally) {
-            tx.set(sessionRef, { poll: tally.poll }, { merge: true })
+            tx.set(sessionRef, { poll: tally.poll }, { mergeFields: ["poll"] })
             if (tally.projection) tx.set(publicStateRef, tally.projection)
           }
           return "created"

@@ -66,7 +66,7 @@ export function createPollStore(db: Firestore, tenantId: string) {
           ]
         })
         const poll = preparePollRecord(pitches, command, attemptId, now)
-        tx.set(sessionRef, { poll }, { merge: true })
+        tx.set(sessionRef, { poll }, { mergeFields: ["poll"] })
         for (const snapshot of snapshots) {
           tx.update(snapshot.ref, { lockedBy: poll.lockId, updatedAt: now })
         }
@@ -86,7 +86,7 @@ export function createPollStore(db: Firestore, tenantId: string) {
           throw new PollError("poll_not_recoverable")
         }
         const poll = attachTwitchPoll(current, twitchPoll, now)
-        tx.set(sessionRef, { poll }, { merge: true })
+        tx.set(sessionRef, { poll }, { mergeFields: ["poll"] })
         tx.set(publicStateRef, votingOverlay(poll))
         return poll
       })
@@ -110,7 +110,7 @@ export function createPollStore(db: Firestore, tenantId: string) {
           errorCode,
           updatedAt: now,
         }
-        tx.set(sessionRef, { poll }, { merge: true })
+        tx.set(sessionRef, { poll }, { mergeFields: ["poll"] })
         return poll
       })
     },
@@ -133,7 +133,7 @@ export function createPollStore(db: Firestore, tenantId: string) {
           errorCode,
           updatedAt: now,
         }
-        tx.set(sessionRef, { poll }, { merge: true })
+        tx.set(sessionRef, { poll }, { mergeFields: ["poll"] })
         for (const snapshot of snapshots) {
           if (snapshot.data()?.lockedBy === current.lockId) {
             tx.update(snapshot.ref, {
@@ -171,7 +171,7 @@ export function createPollStore(db: Firestore, tenantId: string) {
           endedAt: now,
           updatedAt: now,
         }
-        tx.set(sessionRef, { poll }, { merge: true })
+        tx.set(sessionRef, { poll }, { mergeFields: ["poll"] })
         tx.set(publicStateRef, idleOverlay(now))
         for (const snapshot of snapshots) {
           if (snapshot.data()?.lockedBy === current.lockId) {

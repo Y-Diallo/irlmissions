@@ -7,6 +7,8 @@ import { runDevAction } from "@/lib/dev/simulator"
 import { createMissionFromPick } from "@/shared/missions"
 import { DEV_PITCH_PRESETS } from "@/shared/dev"
 import { tenantDoc } from "@/shared/tenant"
+import { eventSubStorageId } from "@/shared/eventsub"
+import { createMissionStore } from "@/lib/missions/store"
 
 describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
   "demo arrival by GPS",
@@ -95,5 +97,39 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
       },
       30_000
     )
+
+    // A new mission must not inherit the last one's reveal and arrival.
+    it("arrives on back-to-back missions", async () => {
+      const app = initializeApp(
+        { projectId: "demo-irlmissions" },
+        "demo-arrival-sequence"
+      )
+      const db = getFirestore(app)
+      const tenantId = "demo-arrival-sequence"
+      const sessionRef = db.doc(tenantDoc(tenantId, "sessions/current"))
+      const statuses: string[] = []
+      try {
+        await runDevAction(db, tenantId, { action: "reset" })
+        for (const preset of ["safe", "coit"] as const) {
+          const { redemptionId } = (await runDevAction(db, tenantId, {
+            action: "inject_pitch",
+            preset,
+          })) as { redemptionId: string }
+          await db
+            .doc(
+              tenantDoc(tenantId, `pitches/${eventSubStorageId(redemptionId)}`)
+            )
+            .update({ reviewStatus: "approved" })
+          await createMissionStore(db, tenantId).pick(redemptionId, Date.now())
+          await runDevAction(db, tenantId, { action: "arrive" })
+          statuses.push((await sessionRef.get()).data()?.mission?.status)
+          await createMissionStore(db, tenantId).act("complete", Date.now())
+        }
+      } finally {
+        await db.recursiveDelete(db.doc(`owners/${tenantId}`))
+        await deleteApp(app)
+      }
+      expect(statuses).toEqual(["arrived", "arrived"])
+    }, 30_000)
   }
 )

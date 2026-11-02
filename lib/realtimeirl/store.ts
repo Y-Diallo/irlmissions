@@ -122,7 +122,11 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
         }
 
         if (decision.mission) {
-          tx.set(sessionRef, { mission: decision.mission }, { merge: true })
+          tx.set(
+            sessionRef,
+            { mission: decision.mission },
+            { mergeFields: ["mission"] }
+          )
           tx.set(publicStateRef, missionOverlay(decision.mission))
         }
         if (owed) {
@@ -181,7 +185,11 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
           tx.delete(confirmationRef)
         }
         if (decision.mission) {
-          tx.set(sessionRef, { mission: decision.mission }, { merge: true })
+          tx.set(
+            sessionRef,
+            { mission: decision.mission },
+            { mergeFields: ["mission"] }
+          )
           tx.set(publicStateRef, missionOverlay(decision.mission))
         }
         if (owed) {

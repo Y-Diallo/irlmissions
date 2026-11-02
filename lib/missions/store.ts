@@ -107,7 +107,7 @@ export function createMissionStore(db: Firestore, tenantId: string) {
                 updatedAt: now,
               },
             },
-            { merge: true }
+            { mergeFields: ["mission", "poll"] }
           )
           for (const snapshot of tiedSnapshots) {
             if (snapshot.data()?.lockedBy === tie.lockId) {
@@ -118,7 +118,7 @@ export function createMissionStore(db: Firestore, tenantId: string) {
             }
           }
         } else {
-          tx.set(sessionRef, { mission }, { merge: true })
+          tx.set(sessionRef, { mission }, { mergeFields: ["mission"] })
         }
         tx.set(publicStateRef, missionOverlay(mission))
         tx.update(pitchRef, {
@@ -185,7 +185,7 @@ export function createMissionStore(db: Firestore, tenantId: string) {
           now
         )
 
-        tx.set(sessionRef, { mission: next }, { merge: true })
+        tx.set(sessionRef, { mission: next }, { mergeFields: ["mission"] })
         tx.set(
           publicStateRef,
           canceled ? idleOverlay(now) : missionOverlay(next)
