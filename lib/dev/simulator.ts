@@ -47,15 +47,31 @@ const DEMO_AUTOMATION = {
 // The simulated GPS feed: the streamer stays wherever they last were (Union
 // Square at first), with fresh timestamps like a live RealtimeIRL feed. A
 // "GPS lost" feed stays lost until the streamer moves again or the demo resets.
-async function refreshLocation(db: Firestore, tenantId: string, now: number) {
+async function refreshLocation(
+  db: Firestore,
+  tenantId: string,
+  now: number,
+  { seed = false } = {}
+) {
   const locationRef = db.doc(tenantDoc(tenantId, "privateState/location"))
   const stored = (await locationRef.get()).data()
   if (stored?.simulatedGpsLost === true) return { gpsLost: true }
-  const latitude = Number(stored?.latitude)
-  const longitude = Number(stored?.longitude)
-  const known = Number.isFinite(latitude) && Number.isFinite(longitude)
+  const known =
+    Number.isFinite(Number(stored?.latitude)) &&
+    Number.isFinite(Number(stored?.longitude)) &&
+    typeof stored?.observedAt === "number"
+  if (known) {
+    // Like a real RealtimeIRL heartbeat: the feed is alive, but no new GPS
+    // observation. Leaving observedAt alone means a beat can never make an
+    // arrival sample look older than the stored one. update() fails rather
+    // than resurrecting a location "Arrive by GPS" has just cleared.
+    await locationRef.update({ feedHeartbeatAt: now }).catch(() => undefined)
+    return { gpsLost: false }
+  }
+  // Only seeding (a new or reset demo) places the streamer at the start.
+  if (!seed) return { gpsLost: false }
   await locationRef.set({
-    ...(known ? { latitude, longitude } : DEMO_LOCATION),
+    ...DEMO_LOCATION,
     observedAt: now,
     receivedAt: now,
     feedHeartbeatAt: now,
@@ -76,7 +92,7 @@ async function seedContext(db: Firestore, tenantId: string, now: number) {
         : { ...DEMO_SETTINGS, automation: DEMO_AUTOMATION },
       { merge: true }
     ),
-    refreshLocation(db, tenantId, now),
+    refreshLocation(db, tenantId, now, { seed: true }),
   ])
 }
 
