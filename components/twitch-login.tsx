@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button, buttonVariants } from "@/components/ui/button"
 
 const LOGIN_ERRORS: Record<string, string> = {
@@ -20,6 +21,7 @@ export function TwitchLogin({
   compact?: boolean
   demoEnabled?: boolean
 }) {
+  const router = useRouter()
   const [uid, setUid] = useState<string | null>(null)
   const [status, setStatus] = useState("Checking sign-in…")
   const [busy, setBusy] = useState(false)
@@ -124,7 +126,7 @@ export function TwitchLogin({
           import("firebase/auth"),
         ])
         await signOut(getBrowserFirebase().auth)
-        setStatus("Signed out.")
+        router.replace("/")
       } catch {
         setStatus("Could not sign out. Please try again.")
       }

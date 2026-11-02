@@ -39,7 +39,7 @@ export default function InstructionsPage() {
       <header className="space-y-4">
         <div className="flex items-start justify-between gap-4">
           <Link
-            href="/"
+            href="/console"
             className={buttonVariants({
               variant: "outline",
               className: "min-h-12 px-4 text-base",

@@ -1,11 +1,13 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { signInWithCustomToken, signOut } from "firebase/auth"
 import { Button } from "@/components/ui/button"
 import { getBrowserFirebase } from "@/lib/firebase/client"
 
 export function DemoLogin({ compact = false }: { compact?: boolean }) {
+  const router = useRouter()
   const [status, setStatus] = useState("")
   const [busy, setBusy] = useState(false)
 
@@ -29,7 +31,7 @@ export function DemoLogin({ compact = false }: { compact?: boolean }) {
     setBusy(true)
     try {
       await signOut(getBrowserFirebase().auth)
-      setStatus("Signed out.")
+      router.replace("/")
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not sign out")
     } finally {

@@ -64,6 +64,11 @@ const RECAP_HOLD_MS = 6_000
 /** One color per poll position, readable on the default map tiles. */
 /** Pin and path opacity while the location feed is quiet. */
 const STALE_OPACITY = 0.4
+const DESTINATION_PIN_ICON = {
+  url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="48" viewBox="0 0 36 48"><path d="M18 2C9.2 2 2 9.1 2 17.9 2 30 18 46 18 46s16-16 16-28.1C34 9.1 26.8 2 18 2Z" fill="#ff2f92" stroke="#111329" stroke-width="3"/><circle cx="18" cy="18" r="6" fill="#ffe04b" stroke="#111329" stroke-width="3"/></svg>'
+  )}`,
+}
 const OPTION_ROUTE_COLORS = [
   "#7c3aed",
   "#db2777",
@@ -499,6 +504,7 @@ export function MapSource({ overlayId }: { overlayId: string }) {
             new api.Marker({
               map,
               position: point(option.destination),
+              icon: DESTINATION_PIN_ICON,
               title: `${option.position}. ${option.title} — ${option.destination.name}`,
               zIndex: 20 + option.position,
             })
@@ -617,6 +623,7 @@ export function MapSource({ overlayId }: { overlayId: string }) {
         return new api.Marker({
           map,
           position: point(item),
+          icon: DESTINATION_PIN_ICON,
           title: `${item.label} at ${item.name}`,
           label: {
             text: `${item.outcome === "completed" ? "✓" : "✗"} ${item.name}`,
@@ -653,7 +660,10 @@ export function MapSource({ overlayId }: { overlayId: string }) {
     if (!destination) return
     const destinationPoint = point(destination)
     if (!destinationMarkerRef.current) {
-      destinationMarkerRef.current = new api.Marker({ map: null })
+      destinationMarkerRef.current = new api.Marker({
+        map: null,
+        icon: DESTINATION_PIN_ICON,
+      })
     }
     const destinationMarker = destinationMarkerRef.current
     destinationMarker.setPosition(destinationPoint)

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 
 async function finishSignIn() {
@@ -26,7 +27,7 @@ export default function CompleteSignInPage() {
     pending.current ??= finishSignIn()
     pending.current
       .then(() => {
-        if (active) router.replace("/")
+        if (active) router.replace("/console")
       })
       .catch(() => {
         if (active)
@@ -43,9 +44,9 @@ export default function CompleteSignInPage() {
       </h1>
       <p role="status">{error || "Finishing secure sign-in…"}</p>
       {error && (
-        <a className="py-3 underline" href="/">
+        <Link className="py-3 underline" href="/">
           Return to sign in
-        </a>
+        </Link>
       )}
     </main>
   )

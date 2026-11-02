@@ -1,62 +1,48 @@
-import Link from "next/link"
-import { BookOpen, Settings } from "lucide-react"
-import { AuthControl } from "@/components/auth-control"
-import { PitchQueue } from "@/components/pitch-queue"
-import { buttonVariants } from "@/components/ui/button"
+import { LandingActions } from "@/components/landing-actions"
 
-export default function Page() {
+const repositoryUrl =
+  process.env.NEXT_PUBLIC_REPOSITORY_URL?.trim() ||
+  "https://github.com/ydiallo/twitch_hackathon"
+
+export default function LandingPage() {
   return (
-    <main className="mx-auto flex min-h-svh max-w-3xl flex-col gap-8 p-4 py-8 sm:p-8">
-      <header className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <p className="pt-3 text-sm font-medium text-muted-foreground">
-            IRL Missions
-          </p>
-          <div className="flex items-start gap-2">
-            <Link
-              href="/setup"
-              aria-label="Open settings"
-              title="Settings"
-              className={buttonVariants({
-                variant: "outline",
-                size: "icon",
-              })}
-            >
-              <Settings aria-hidden="true" />
-              <span className="sr-only">Open settings</span>
-            </Link>
-            <AuthControl />
+    <main className="landing-page">
+      <section className="landing-copy">
+        <p className="landing-kicker">LIVE PRODUCER MODE</p>
+        <h1>IRL Missions</h1>
+        <p className="landing-tagline">
+          Chat pitches the missions, you run the stream.
+        </p>
+        <LandingActions repositoryUrl={repositoryUrl} />
+      </section>
+
+      <section className="landing-showcase" aria-label="Stream overlay preview">
+        <div className="show-card show-card--voting landing-preview-card">
+          <p className="show-kicker">CHAT DECIDES</p>
+          <h2 className="show-title">What happens next?</h2>
+          <ol className="show-options">
+            <li className="show-option--leader">
+              <span>1</span>
+              <b className="show-option-title">Street food speedrun</b>
+              <em className="show-option-tag">WINNING</em>
+              <strong className="show-option-votes">58%</strong>
+            </li>
+            <li>
+              <span>2</span>
+              <b className="show-option-title">Win Tic-Tac-Toe</b>
+              <strong className="show-option-votes">27%</strong>
+            </li>
+            <li>
+              <span>3</span>
+              <b className="show-option-title">Find the city mascot</b>
+              <strong className="show-option-votes">15%</strong>
+            </li>
+          </ol>
+          <div className="show-live">
+            <i /> VOTING LIVE
           </div>
         </div>
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Producer console
-        </h1>
-        <p className="max-w-2xl text-base leading-relaxed text-muted-foreground">
-          Review pitches, run the next poll, and control the live mission.
-        </p>
-        <nav className="grid grid-cols-1 gap-2 sm:flex">
-          <Link
-            href="/instructions"
-            className={buttonVariants({
-              variant: "outline",
-              className: "min-h-12 w-full px-4 text-base sm:w-auto",
-            })}
-          >
-            <BookOpen aria-hidden="true" />
-            Instructions
-          </Link>
-          <Link
-            href="/refunds"
-            className={buttonVariants({
-              variant: "outline",
-              className: "min-h-12 w-full px-4 text-base sm:w-auto",
-            })}
-          >
-            Pitches &amp; refunds
-          </Link>
-        </nav>
-      </header>
-      <PitchQueue />
+      </section>
     </main>
   )
 }
