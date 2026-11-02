@@ -165,4 +165,24 @@ describe("RealtimeIRL scoped routes", () => {
       privacyBlocked: false,
     })
   })
+
+  it("passes the RealtimeIRL session along with a heartbeat", async () => {
+    mocks.requireOverlayTenant.mockResolvedValue("42")
+    mocks.heartbeat.mockResolvedValue({
+      status: "awaiting_location",
+      privacyBlocked: false,
+    })
+    const response = await postHeartbeat(
+      new Request("http://localhost/api/realtimeirl/heartbeat", {
+        method: "POST",
+        headers: { ...authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: "session-2", latitude: 1 }),
+      })
+    )
+    expect(response.status).toBe(200)
+    expect(mocks.heartbeat).toHaveBeenCalledWith(
+      expect.any(Number),
+      "session-2"
+    )
+  })
 })

@@ -46,6 +46,14 @@ describe("RealtimeIRL browser adapter", () => {
       observedAt: 101,
       accuracyMeters: 14,
     })
+    listeners.location({
+      location: { latitude: 37.78, longitude: -122.41 },
+      reportedAt: 102,
+      sessionId: "session-9",
+    })
+    expect(onLocation).toHaveBeenLastCalledWith(
+      expect.objectContaining({ observedAt: 102, sessionId: "session-9" })
+    )
     stop()
     expect(unsubscribeLocation).toHaveBeenCalledOnce()
     expect(unsubscribeSession).toHaveBeenCalledOnce()
@@ -57,7 +65,7 @@ describe("RealtimeIRL browser adapter", () => {
     const stop = await subscribeRealtimeIrl("pull-key", vi.fn(), onHeartbeat)
 
     listeners.session("session-1")
-    expect(onHeartbeat).toHaveBeenCalledOnce()
+    expect(onHeartbeat).toHaveBeenCalledWith("session-1")
     await vi.advanceTimersByTimeAsync(30_000)
     expect(onHeartbeat).toHaveBeenCalledTimes(3)
 

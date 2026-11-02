@@ -1,6 +1,6 @@
 import "server-only"
 
-import { FieldValue, type Firestore } from "firebase-admin/firestore"
+import type { Firestore } from "firebase-admin/firestore"
 import {
   readOwedConsequences,
   settleConsequences,
@@ -9,6 +9,7 @@ import { missionOverlay } from "@/shared/overlay"
 import {
   evaluateRealtimeIrlArrival,
   evaluateRealtimeIrlHeartbeat,
+  heartbeatVouchesFor,
   parseArrivalSettings,
   RealtimeIrlError,
   type ArrivalConfirmation,
@@ -107,8 +108,12 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
         tx.set(locationRef, {
           latitude: sample.latitude,
           longitude: sample.longitude,
-          observedAt: sample.observedAt,
-          accuracyMeters: sample.accuracyMeters ?? FieldValue.delete(),
+          observedAt: decision.observedAt ?? sample.observedAt,
+          // A full set: omitted fields simply don't carry over.
+          ...(sample.accuracyMeters !== undefined
+            ? { accuracyMeters: sample.accuracyMeters }
+            : {}),
+          ...(sample.sessionId ? { sessionId: sample.sessionId } : {}),
           receivedAt: now,
           feedHeartbeatAt: now,
           source: "realtimeirl",
@@ -142,7 +147,7 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
         return decision
       })
     },
-    heartbeat(now: number) {
+    heartbeat(now: number, sessionId?: string) {
       return db.runTransaction(async (tx) => {
         const [
           settingsSnapshot,
@@ -157,6 +162,19 @@ export function createRealtimeIrlStore(db: Firestore, tenantId: string) {
         )
         if (!settingsSnapshot.exists) {
           throw new Error("Arrival settings are missing")
+        }
+        coordinatesFrom(locationSnapshot.data())
+        if (
+          !heartbeatVouchesFor(locationSnapshot.data()?.sessionId, sessionId)
+        ) {
+          // Left alone, the old position greys out on the map until this
+          // session reports where the streamer actually is.
+          return {
+            status: "awaiting_location" as const,
+            fresh: false,
+            privacyBlocked: false,
+            nextConfirmation: null,
+          }
         }
         const decision = evaluateRealtimeIrlHeartbeat({
           location: coordinatesFrom(locationSnapshot.data()),

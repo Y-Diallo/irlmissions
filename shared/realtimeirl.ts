@@ -5,10 +5,18 @@ export const DEFAULT_ARRIVAL_RADIUS_METERS = 50
 export const DEFAULT_ARRIVAL_SAMPLE_SPAN_MS = 10_000
 export const DEFAULT_LOCATION_MAX_AGE_MS = 30_000
 const MAX_FUTURE_SKEW_MS = 5_000
+/**
+ * Reports later than the arrival window still move the map, up to this old.
+ * Network lag or a phone clock that runs behind shouldn't freeze the pin.
+ */
+export const MAX_LATE_SAMPLE_MS = 5 * 60_000
+/** A phone clock up to this far ahead is read as "now" rather than dropped. */
+const MAX_CLOCK_AHEAD_MS = 5 * 60_000
 
 export type RealtimeIrlSample = Coordinates & {
   observedAt: number
   accuracyMeters?: number
+  sessionId?: string
 }
 
 export type ArrivalSettings = {
@@ -32,6 +40,8 @@ export type ArrivalDecision = {
     | "mission_finished"
     | "already_revealed"
     | "privacy_zone"
+    | "awaiting_location"
+    | "late"
     | "outside_destination"
     | "confirming"
     | "arrived"
@@ -82,6 +92,7 @@ export function parseRealtimeIrlSample(value: unknown): RealtimeIrlSample {
   const longitude = finiteNumber(input.longitude, "invalid_location_sample")
   const observedAt = finiteNumber(input.observedAt, "invalid_location_sample")
   const accuracyMeters = input.accuracyMeters
+  const sessionId = parseRealtimeIrlSessionId(input.sessionId)
   if (
     latitude < -90 ||
     latitude > 90 ||
@@ -102,7 +113,30 @@ export function parseRealtimeIrlSample(value: unknown): RealtimeIrlSample {
     longitude,
     observedAt,
     ...(typeof accuracyMeters === "number" ? { accuracyMeters } : {}),
+    ...(sessionId ? { sessionId } : {}),
   }
+}
+
+/** An optional RealtimeIRL session id; anything malformed is rejected. */
+export function parseRealtimeIrlSessionId(value: unknown) {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== "string" || value.length < 1 || value.length > 128) {
+    throw new RealtimeIrlError("invalid_location_sample")
+  }
+  return value
+}
+
+/**
+ * A heartbeat says the feed is alive, not where the streamer is. It only
+ * vouches for a stored position from the same RealtimeIRL session: a new
+ * session (the app started late) waits for its first real sample instead
+ * of reviving wherever the last one ended. Older overlays send no session.
+ */
+export function heartbeatVouchesFor(
+  storedSessionId: unknown,
+  sessionId: string | undefined
+) {
+  return sessionId === undefined || storedSessionId === sessionId
 }
 
 export function parseArrivalSettings(value: unknown): ArrivalSettings {
@@ -147,12 +181,10 @@ export function evaluateRealtimeIrlArrival(input: {
   mission: MissionRecord | null
   confirmation: ArrivalConfirmation | null
   latestObservedAt?: number
-}): ArrivalDecision {
-  const { sample, now, settings, mission } = input
-  if (
-    sample.observedAt > now + MAX_FUTURE_SKEW_MS ||
-    now - sample.observedAt > settings.locationMaxAgeMs
-  ) {
+}): ArrivalDecision & { observedAt?: number } {
+  const { now } = input
+  const ahead = input.sample.observedAt - now
+  if (ahead > MAX_CLOCK_AHEAD_MS || -ahead > MAX_LATE_SAMPLE_MS) {
     return {
       status: "stale",
       fresh: false,
@@ -160,6 +192,26 @@ export function evaluateRealtimeIrlArrival(input: {
       nextConfirmation: null,
     }
   }
+  const sample =
+    ahead > MAX_FUTURE_SKEW_MS
+      ? { ...input.sample, observedAt: now }
+      : input.sample
+  const decision = evaluateTimedSample({ ...input, sample })
+  // The time the store saves, after any clock correction.
+  return decision.fresh
+    ? { ...decision, observedAt: sample.observedAt }
+    : decision
+}
+
+function evaluateTimedSample(input: {
+  sample: RealtimeIrlSample
+  now: number
+  settings: ArrivalSettings
+  mission: MissionRecord | null
+  confirmation: ArrivalConfirmation | null
+  latestObservedAt?: number
+}): ArrivalDecision {
+  const { sample, now, settings, mission } = input
   if (
     input.latestObservedAt !== undefined &&
     sample.observedAt <= input.latestObservedAt
@@ -174,6 +226,15 @@ export function evaluateRealtimeIrlArrival(input: {
 
   const insideBase =
     distanceMeters(sample, settings.baseZone) <= settings.baseZone.radiusMeters
+  // Too late to count toward arrival, but still the newest position.
+  if (now - sample.observedAt > settings.locationMaxAgeMs) {
+    return {
+      status: "late",
+      fresh: true,
+      privacyBlocked: insideBase,
+      nextConfirmation: input.confirmation,
+    }
+  }
   if (!mission) {
     return {
       status: "no_active_mission",

@@ -5,6 +5,7 @@ import {
   evaluateRealtimeIrlHeartbeat,
   parseArrivalSettings,
   parseRealtimeIrlSample,
+  heartbeatVouchesFor,
   type ArrivalConfirmation,
 } from "@/shared/realtimeirl"
 
@@ -68,6 +69,31 @@ function evaluate(input?: {
   })
 }
 
+describe("RealtimeIRL sessions", () => {
+  it("keeps a valid session id on a sample and rejects a malformed one", () => {
+    const base = { latitude: 1, longitude: 2, observedAt: 100 }
+    expect(parseRealtimeIrlSample({ ...base, sessionId: "s-1" })).toEqual({
+      ...base,
+      sessionId: "s-1",
+    })
+    expect(() => parseRealtimeIrlSample({ ...base, sessionId: 7 })).toThrow(
+      "invalid_location_sample"
+    )
+    expect(() =>
+      parseRealtimeIrlSample({ ...base, sessionId: "x".repeat(129) })
+    ).toThrow("invalid_location_sample")
+  })
+
+  it("lets a heartbeat vouch only for a position from the same session", () => {
+    expect(heartbeatVouchesFor("s-1", "s-1")).toBe(true)
+    // The app started late: the stored spot is from an earlier session.
+    expect(heartbeatVouchesFor("s-0", "s-1")).toBe(false)
+    expect(heartbeatVouchesFor(undefined, "s-1")).toBe(false)
+    // Overlays from before sessions were tracked keep working.
+    expect(heartbeatVouchesFor("s-0", undefined)).toBe(true)
+  })
+})
+
 describe("RealtimeIRL arrival policy", () => {
   it("uses conservative defaults and validates incoming coordinates", () => {
     expect(settings).toMatchObject({
@@ -87,15 +113,41 @@ describe("RealtimeIRL arrival policy", () => {
     ).toThrow("invalid_location_sample")
   })
 
-  it("does not save stale or future samples as current location", () => {
-    expect(evaluate({ observedAt: now - 30_001 })).toMatchObject({
+  it("moves the map with a late report but never arrives on one", () => {
+    const late = evaluate({ observedAt: now - 30_001 })
+    expect(late).toMatchObject({
+      status: "late",
+      fresh: true,
+      observedAt: now - 30_001,
+    })
+    expect(late.mission).toBeUndefined()
+    // A late report neither starts nor breaks an arrival in progress.
+    const confirmation = {
+      missionId: "mission-1",
+      firstObservedAt: now - 5_000,
+      lastObservedAt: now - 5_000,
+    }
+    expect(
+      evaluate({ observedAt: now - 60_000, confirmation }).nextConfirmation
+    ).toEqual(confirmation)
+  })
+
+  it("drops reports too old or too far ahead even for the map", () => {
+    expect(evaluate({ observedAt: now - 5 * 60_000 - 1 })).toMatchObject({
       status: "stale",
       fresh: false,
     })
-    expect(evaluate({ observedAt: now + 5_001 })).toMatchObject({
+    expect(evaluate({ observedAt: now + 5 * 60_000 + 1 })).toMatchObject({
       status: "stale",
       fresh: false,
     })
+  })
+
+  it("reads a phone clock that runs ahead as now", () => {
+    const ahead = evaluate({ observedAt: now + 90_000 })
+    expect(ahead.fresh).toBe(true)
+    expect(ahead.status).not.toBe("late")
+    expect(ahead.observedAt).toBe(now)
   })
 
   it("does not let duplicate or reordered callbacks regress location", () => {

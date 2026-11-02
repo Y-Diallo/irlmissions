@@ -350,6 +350,8 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
     if (!key) return
     let stopped = false
     let unsubscribe: (() => void) | undefined
+    // Reports the server turned away for timing, in a row.
+    let rejected = 0
 
     const sendLocation = async (location: RealtimeIrlLocation) => {
       try {
@@ -363,25 +365,34 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
           body: JSON.stringify(location),
         })
         if (!response.ok) throw new Error("Location update failed")
-        if (!stopped) setLocationError("")
+        const { status } = (await response.json()) as { status?: string }
+        if (status === "stale") rejected += 1
+        else if (status !== "duplicate") rejected = 0
+        if (stopped) return
+        // Several in a row means the phone clock or connection is off,
+        // not one stray report.
+        setLocationError(rejected >= 3 ? "GPS reports arriving too late" : "")
       } catch {
         if (!stopped) setLocationError("Location disconnected")
       }
     }
 
-    const sendHeartbeat = async () => {
+    const sendHeartbeat = async (sessionId: string) => {
       try {
         const response = await fetch("/api/realtimeirl/heartbeat", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${key}`,
             "X-Overlay-Id": overlayId ?? "",
+            "Content-Type": "application/json",
           },
+          body: JSON.stringify({ sessionId }),
         })
         if (!response.ok && response.status !== 409) {
           throw new Error("Location heartbeat failed")
         }
-        if (!stopped) setLocationError("")
+        // A live feed doesn't excuse reports that keep arriving too late.
+        if (!stopped && rejected < 3) setLocationError("")
       } catch {
         if (!stopped) setLocationError("Location disconnected")
       }
@@ -412,7 +423,7 @@ export function OverlaySource({ overlayId }: { overlayId?: string }) {
           (location) => {
             void sendLocation(location)
           },
-          () => void sendHeartbeat()
+          (sessionId) => void sendHeartbeat(sessionId)
         )
         if (stopped) stop()
         else {

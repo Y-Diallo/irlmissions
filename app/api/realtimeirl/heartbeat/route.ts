@@ -1,8 +1,31 @@
 import { NextResponse } from "next/server"
 import { OverlayAccessError } from "@/shared/overlay-access"
-import { RealtimeIrlError } from "@/shared/realtimeirl"
+import {
+  parseRealtimeIrlSessionId,
+  RealtimeIrlError,
+} from "@/shared/realtimeirl"
 
 export const runtime = "nodejs"
+
+const MAX_BODY_BYTES = 256
+
+// Only the RealtimeIRL session id is read; coordinates never come this way.
+async function sessionIdFrom(request: Request) {
+  const text = await request.text()
+  if (!text) return undefined
+  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
+    throw new RealtimeIrlError("invalid_location_sample")
+  }
+  let body: unknown
+  try {
+    body = JSON.parse(text)
+  } catch {
+    throw new RealtimeIrlError("invalid_location_sample")
+  }
+  return body && typeof body === "object" && !Array.isArray(body)
+    ? parseRealtimeIrlSessionId((body as Record<string, unknown>).sessionId)
+    : undefined
+}
 
 const HEADERS = {
   "Cache-Control": "no-store",
@@ -21,10 +44,11 @@ export async function POST(request: Request) {
       import("@/lib/realtimeirl/store"),
     ])
     const tenantId = await requireOverlayTenant(request)
-    const result = await createRealtimeIrlStore(
-      getServerFirebase().db,
-      tenantId
-    ).heartbeat(Date.now())
+    const sessionId = await sessionIdFrom(request)
+    const store = createRealtimeIrlStore(getServerFirebase().db, tenantId)
+    const result = sessionId
+      ? await store.heartbeat(Date.now(), sessionId)
+      : await store.heartbeat(Date.now())
     return NextResponse.json(
       {
         status: result.status,
