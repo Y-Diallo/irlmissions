@@ -53,7 +53,7 @@ export type MissionPitch = {
 }
 
 export type MissionAction =
-  "arrive" | "complete" | "fail" | "deny" | "extend" | "cancel"
+  "arrive" | "complete" | "fail" | "deny" | "extend" | "shorten" | "cancel"
 
 export const EXTEND_MS = 5 * 60_000
 
@@ -267,6 +267,7 @@ export function parseMissionAction(value: unknown): MissionAction {
     action !== "fail" &&
     action !== "deny" &&
     action !== "extend" &&
+    action !== "shorten" &&
     action !== "cancel"
   ) {
     throw new MissionError("invalid_mission_action", 400)
@@ -320,6 +321,28 @@ export function transitionMission(
     return {
       ...current,
       timerEndsAt: Math.max(current.timerEndsAt, now) + EXTEND_MS,
+      updatedAt: now,
+    }
+  }
+  if (action === "shorten") {
+    if (current.status === "heading") {
+      // Never below a one-minute mission; at the floor it's a no-op.
+      const durationMinutes = Math.max(
+        1,
+        current.durationMinutes - EXTEND_MS / 60_000
+      )
+      return durationMinutes === current.durationMinutes
+        ? record
+        : { ...current, durationMinutes, updatedAt: now }
+    }
+    if (current.status !== "arrived" || !current.timerEndsAt) {
+      throw new MissionError("mission_finished")
+    }
+    // A timer with under five minutes left runs out now, never into the past.
+    if (current.timerEndsAt <= now) return record
+    return {
+      ...current,
+      timerEndsAt: Math.max(now, current.timerEndsAt - EXTEND_MS),
       updatedAt: now,
     }
   }

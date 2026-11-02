@@ -224,7 +224,30 @@ describe("mission state", () => {
     )
   })
 
-  it("accepts only the five owner actions", () => {
+  it("takes five minutes off without going below a minute or into the past", () => {
+    // mission() is 10 minutes: 10 -> 5 -> 1, then the floor holds.
+    const shorter = transitionMission(mission(), "shorten", now + 500)
+    expect(shorter.durationMinutes).toBe(5)
+    const shortest = transitionMission(shorter, "shorten", now + 600)
+    expect(shortest.durationMinutes).toBe(1)
+    expect(transitionMission(shortest, "shorten", now + 700)).toBe(shortest)
+
+    const arrived = transitionMission(mission(), "arrive", now + 1000)
+    expect(transitionMission(arrived, "shorten", now + 2000).timerEndsAt).toBe(
+      now + 301_000
+    )
+    // Under five minutes left: the timer runs out now.
+    const late = transitionMission(arrived, "shorten", now + 400_000)
+    expect(late.timerEndsAt).toBe(now + 400_000)
+    expect(transitionMission(late, "shorten", now + 500_000)).toBe(late)
+    const complete = transitionMission(arrived, "complete", now + 2000)
+    expect(() => transitionMission(complete, "shorten", now + 3000)).toThrow(
+      "mission_finished"
+    )
+  })
+
+  it("accepts only the owner actions", () => {
+    expect(parseMissionAction({ action: "shorten" })).toBe("shorten")
     expect(parseMissionAction({ action: "arrive" })).toBe("arrive")
     expect(parseMissionAction({ action: "complete" })).toBe("complete")
     expect(parseMissionAction({ action: "fail" })).toBe("fail")

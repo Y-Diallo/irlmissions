@@ -233,16 +233,34 @@ export function MissionCard({
       </CardContent>
       {!terminal && (
         <CardFooter className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Button
-            variant="outline"
-            className="col-span-full min-h-14 w-full text-lg"
-            disabled={busy}
-            onClick={() => void act("extend")}
-          >
-            +5 min
-            {mission.status === "heading" &&
-              ` (${mission.durationMinutes} min mission)`}
-          </Button>
+          <div className="col-span-full grid grid-cols-2 gap-3">
+            <Button
+              variant="outline"
+              className="min-h-14 w-full text-lg"
+              disabled={
+                busy ||
+                (mission.status === "heading"
+                  ? mission.durationMinutes <= 1
+                  : remaining <= 0)
+              }
+              onClick={() => void act("shorten")}
+            >
+              −5 min
+            </Button>
+            <Button
+              variant="outline"
+              className="min-h-14 w-full text-lg"
+              disabled={busy}
+              onClick={() => void act("extend")}
+            >
+              +5 min
+            </Button>
+            {mission.status === "heading" && (
+              <p className="col-span-full text-center text-sm text-muted-foreground">
+                {mission.durationMinutes} min mission
+              </p>
+            )}
+          </div>
           {mission.status === "heading" ? (
             <>
               <Button
