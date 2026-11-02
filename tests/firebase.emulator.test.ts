@@ -55,7 +55,7 @@ describe.runIf(process.env.RUN_EMULATOR_TESTS === "true")(
           host: "127.0.0.1",
           port: 8080,
           rules: await readFile(
-            new URL("../../firestore.rules", import.meta.url),
+            new URL("../firestore.rules", import.meta.url),
             "utf8"
           ),
         },

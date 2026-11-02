@@ -39,3 +39,9 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# firebase
+.firebase/
+.emulator-data/
+firebase-debug.log*
+firestore-debug.log*

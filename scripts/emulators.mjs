@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url"
 
 const test = process.argv[2] === "test"
 const configPath = fileURLToPath(
-  new URL("../../firebase.json", import.meta.url)
+  new URL("../firebase.json", import.meta.url)
 )
 const cli = fileURLToPath(
   new URL("../node_modules/firebase-tools/lib/bin/firebase.js", import.meta.url)
