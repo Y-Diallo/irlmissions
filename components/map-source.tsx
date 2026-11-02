@@ -16,7 +16,11 @@ type MapInstance = {
   panTo(point: LatLng): void
   setCenter(point: LatLng): void
   setZoom(zoom: number): void
-  fitBounds(bounds: BoundsInstance, padding?: number): void
+  fitBounds(
+    bounds: BoundsInstance,
+    padding?:
+      number | { top: number; right: number; bottom: number; left: number }
+  ): void
   getBounds(): { contains(point: LatLng): boolean } | undefined
 }
 type PolylineInstance = {
@@ -133,12 +137,14 @@ function fitPoints(map: MapInstance, api: MapsApi, points: LatLng[]) {
   if (!points.length) return
   if (points.length === 1) {
     map.setCenter(points[0]!)
-    map.setZoom(15)
+    map.setZoom(14)
     return
   }
   const bounds = new api.LatLngBounds()
   points.forEach((value) => bounds.extend(value))
-  map.fitBounds(bounds, 64)
+  // Generous margins so markers and labels never touch the edge; the top
+  // also clears the state pill.
+  map.fitBounds(bounds, { top: 120, right: 100, bottom: 100, left: 100 })
 }
 
 // Refit when this is a new framing or anything that matters has left view;
@@ -547,14 +553,14 @@ export function MapSource({ overlayId }: { overlayId: string }) {
   const visible = !!projection && projection.state !== "idle" && !recapHidden
   const stateLabel =
     projection?.state === "voting"
-      ? "CHAT IS VOTING"
+      ? "VOTING"
       : projection?.state === "heading"
-        ? "HEADING THERE"
+        ? "EN ROUTE"
         : projection?.state === "arrived"
           ? "ARRIVED"
           : projection?.outcome === "completed"
-            ? "MISSION COMPLETE"
-            : "MISSION FAILED"
+            ? "COMPLETE"
+            : "FAILED"
 
   return (
     <main className="map-source">
@@ -574,12 +580,7 @@ export function MapSource({ overlayId }: { overlayId: string }) {
         }}
       >
         <div ref={elementRef} className="map-source__canvas" />
-        {visible && (
-          <div className="map-source__label">
-            <strong>MISSION MAP</strong>
-            <span>{stateLabel}</span>
-          </div>
-        )}
+        {visible && <div className="map-source__label">{stateLabel}</div>}
         {error && <div className="map-source__warning">{error}</div>}
       </motion.div>
     </main>
