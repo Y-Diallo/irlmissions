@@ -1,10 +1,13 @@
 import "server-only"
 
 import type { Firestore } from "firebase-admin/firestore"
+import { isDemoTenant } from "@/shared/auth/demo-owner"
+import { readServerConfig } from "@/shared/config"
 import { eventSubStorageId } from "@/shared/eventsub"
 import { createMapProjection, type MapPitchOption } from "@/shared/map"
 import type { MissionRecord } from "@/shared/missions"
 import type { TravelMode } from "@/shared/pitches/processor"
+import { createFakePitchProviders } from "@/shared/providers/fake-pitch"
 import {
   createGoogleRoutesProvider,
   readGoogleMapsConfig,
@@ -21,11 +24,23 @@ const googleWalk: RouteWalker = (origin, destination, mode) =>
     mode
   )
 
+// The demo account and emulator never call Google; they get scripted routes.
+function defaultWalk(tenantId: string): RouteWalker {
+  if (
+    readServerConfig(process.env).mode !== "emulator" &&
+    !isDemoTenant(tenantId)
+  ) {
+    return googleWalk
+  }
+  const { routes } = createFakePitchProviders()
+  return (origin, destination, mode) => routes.walk(origin, destination, mode)
+}
+
 export async function readMapProjection(
   db: Firestore,
   tenantId: string,
   now = Date.now(),
-  walk: RouteWalker = googleWalk
+  walk: RouteWalker = defaultWalk(tenantId)
 ) {
   const [session, location, settings] = await Promise.all([
     db.doc(tenantDoc(tenantId, "sessions/current")).get(),

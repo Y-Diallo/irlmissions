@@ -3,7 +3,13 @@ import "server-only"
 import { randomUUID } from "node:crypto"
 import { FieldValue, type Firestore } from "firebase-admin/firestore"
 import { eventSubStorageId, type PendingPitch } from "@/shared/eventsub"
-import { DEV_PITCH_PRESETS, DevError, type DevAction } from "@/shared/dev"
+import {
+  DEMO_START,
+  DEV_PITCH_PRESETS,
+  DevError,
+  type DemoPresetKey,
+  type DevAction,
+} from "@/shared/dev"
 import type { MissionRecord } from "@/shared/missions"
 import { tallyOverlay } from "@/shared/overlay"
 import type { PollRecord } from "@/shared/polls"
@@ -12,7 +18,7 @@ import { runPitchNow } from "@/lib/pitches/runner"
 import { createPollEndStore } from "@/lib/polls/end-store"
 import { createRealtimeIrlStore } from "@/lib/realtimeirl/store"
 
-const DEMO_LOCATION = { latitude: 37.774, longitude: -122.419 }
+const DEMO_LOCATION = DEMO_START
 const DEMO_SETTINGS = {
   searchRadiusMeters: 5000,
   defaultDurationMinutes: 10,
@@ -22,7 +28,9 @@ const DEMO_SETTINGS = {
   arrivalLocationMaxAgeMs: 30_000,
   arrivalRadiusMeters: 50,
   arrivalSampleSpanMs: 10_000,
-  baseZone: { latitude: 37.7, longitude: -122.5, radiusMeters: 150 },
+  // The demo "home" privacy zone, in the Outer Sunset, away from every
+  // scripted destination so none of them are hidden.
+  baseZone: { latitude: 37.7535, longitude: -122.4955, radiusMeters: 150 },
 }
 
 async function seedContext(db: Firestore, tenantId: string, now: number) {
@@ -45,23 +53,25 @@ async function seedContext(db: Firestore, tenantId: string, now: number) {
 async function injectPitch(
   db: Firestore,
   tenantId: string,
-  preset: keyof typeof DEV_PITCH_PRESETS,
+  preset: DemoPresetKey,
   now: number
 ) {
   await seedContext(db, tenantId, now)
   const redemptionId = `demo-${randomUUID()}`
+  const scripted = DEV_PITCH_PRESETS[preset]
+  const login = scripted.viewer.toLowerCase()
   const pitch: PendingPitch = {
     redemptionId,
     sourceMessageId: `demo-message-${redemptionId}`,
     broadcasterId: tenantId,
-    viewer: { id: "demo-viewer", login: "chat", name: "DemoViewer" },
+    viewer: { id: `demo-${login}`, login, name: scripted.viewer },
     reward: {
       id: "demo-reward",
       title: "Pitch a mission",
       prompt: "",
       cost: 10,
     },
-    rawText: DEV_PITCH_PRESETS[preset],
+    rawText: scripted.text,
     redeemedAt: new Date(now).toISOString(),
     redemptionStatus: "unfulfilled",
     reviewStatus: "processing",
@@ -220,15 +230,13 @@ export async function runDevAction(
   if (action.action === "move_toward") return move(db, tenantId, false, now)
   if (action.action === "arrive") return move(db, tenantId, true, now)
   if (action.action === "gps_lost") {
-    await db
-      .doc(tenantDoc(tenantId, "privateState/location"))
-      .set(
-        {
-          feedHeartbeatAt: now - 999_999,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      )
+    await db.doc(tenantDoc(tenantId, "privateState/location")).set(
+      {
+        feedHeartbeatAt: now - 999_999,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    )
     return { gpsLost: true }
   }
   return reset(db, tenantId, now)

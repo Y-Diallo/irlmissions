@@ -10,17 +10,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { DEV_PITCH_PRESETS, type DevAction } from "@/shared/dev"
+import {
+  DEV_PITCH_PRESETS,
+  type DemoPresetKey,
+  type DevAction,
+} from "@/shared/dev"
 import type { MissionOwnerView } from "@/shared/missions"
 import type { PollRecord } from "@/shared/polls"
 
-const presetLabels: Record<keyof typeof DEV_PITCH_PRESETS, string> = {
-  safe: "Safe place pitch",
-  consequence: "Pitch with consequence",
-  anywhere: "No-travel pitch",
-  safety: "Safety-flagged pitch",
-  automod: "AutoMod rejection",
-}
+const presetKeys = Object.keys(DEV_PITCH_PRESETS) as DemoPresetKey[]
+const presetGroups = [
+  { group: "mission", title: "Inject a San Francisco pitch" },
+  { group: "edge", title: "Edge cases" },
+] as const
 
 export function DevPanel({
   poll,
@@ -93,31 +95,32 @@ export function DevPanel({
       <CardHeader>
         <CardTitle className="text-lg">Demo controls</CardTitle>
         <CardDescription>
-          These controls use fake providers and never contact Twitch, Places,
-          Routes, OpenAI, or RealtimeIRL.
+          The streamer starts in Union Square, San Francisco. These controls use
+          scripted providers and never contact Twitch, Places, Routes, OpenAI,
+          or RealtimeIRL.
         </CardDescription>
       </CardHeader>
       <CardContent className="gap-5">
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Inject a pitch</p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {(
-              Object.keys(DEV_PITCH_PRESETS) as Array<
-                keyof typeof DEV_PITCH_PRESETS
-              >
-            ).map((preset) => (
-              <Button
-                key={preset}
-                variant="outline"
-                className="min-h-12 justify-start bg-white text-left"
-                disabled={busy}
-                onClick={() => void run({ action: "inject_pitch", preset })}
-              >
-                {presetLabels[preset]}
-              </Button>
-            ))}
+        {presetGroups.map(({ group, title }) => (
+          <div key={group} className="space-y-2">
+            <p className="text-sm font-medium">{title}</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {presetKeys
+                .filter((preset) => DEV_PITCH_PRESETS[preset].group === group)
+                .map((preset) => (
+                  <Button
+                    key={preset}
+                    variant="outline"
+                    className="h-auto min-h-12 justify-start bg-white py-2 text-left whitespace-normal"
+                    disabled={busy}
+                    onClick={() => void run({ action: "inject_pitch", preset })}
+                  >
+                    {DEV_PITCH_PRESETS[preset].label}
+                  </Button>
+                ))}
+            </div>
           </div>
-        </div>
+        ))}
 
         {activePoll && (
           <div className="space-y-2">
